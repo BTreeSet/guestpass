@@ -19,7 +19,7 @@ cargo clippy --all-targets --locked -- -D warnings
 step "cargo test"
 cargo test --locked
 
-step "gates G5, G6"
+step "gates G5, G6, G9, G11"
 ./ci/gates.sh
 
 step "cargo-deny (G1)"

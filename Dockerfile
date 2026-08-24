@@ -54,3 +54,32 @@ COPY --from=connector /runtree /run
 USER nonroot
 ENTRYPOINT ["/usr/local/bin/guestpass"]
 CMD ["serve"]
+
+# Build metadata. The registry and the Supervisor read these; the program does
+# not. The values that change per build arrive as arguments; the values that
+# describe the project are written here, so a build outside CI still produces a
+# labelled image.
+ARG BUILD_ARCH="amd64"
+ARG BUILD_DATE
+ARG BUILD_REF
+ARG BUILD_REPOSITORY="BTreeSet/guestpass"
+ARG BUILD_VERSION="dev"
+
+LABEL \
+    io.hass.name="guestpass" \
+    io.hass.description="Give a visitor a QR code that turns on one light, from anywhere, without exposing Home Assistant." \
+    io.hass.arch="${BUILD_ARCH}" \
+    io.hass.type="addon" \
+    io.hass.version="${BUILD_VERSION}" \
+    maintainer="Joe Fang <guestpass@oss.joefang.org>" \
+    org.opencontainers.image.title="guestpass" \
+    org.opencontainers.image.description="Give a visitor a QR code that turns on one light, from anywhere, without exposing Home Assistant." \
+    org.opencontainers.image.vendor="BTreeSet" \
+    org.opencontainers.image.authors="Joe Fang <guestpass@oss.joefang.org>" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.url="https://github.com/${BUILD_REPOSITORY}" \
+    org.opencontainers.image.source="https://github.com/${BUILD_REPOSITORY}" \
+    org.opencontainers.image.documentation="https://github.com/${BUILD_REPOSITORY}/blob/main/README.md" \
+    org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.revision="${BUILD_REF}" \
+    org.opencontainers.image.version="${BUILD_VERSION}"

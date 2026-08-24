@@ -242,3 +242,28 @@ happens in the owner's toolchain.
 * The document depends on `qrcode` (LPPL 1.3), which draws with the TeX `\rule`
   primitive and needs no shell-escape, external program, or graphics package. It
   has been at v1.51 since 2015 and implements ISO 18004:2006, which is frozen.
+
+---
+
+## D-11 — One manifest list, built natively per architecture
+
+**Premise.** The Supervisor installs `<image>:<version>` and picks the entry
+matching the machine it runs on. Both facts come from `addon/config.yaml`.
+GitHub offers `ubuntu-24.04-arm`, free and unlimited on public repositories.
+
+**Decision.** `deploy.yaml` runs one runner per architecture, each compiling for
+the machine it runs on, pushing by digest under no tag. A final job joins the
+digests into one manifest list, which is what `image:` names.
+
+**Consequences.**
+
+* A Rust release build compiles at native speed. The emulator leaves the tree.
+* The runner label lives in the workflow and the architecture list lives in the
+  manifest. Gate G11 asserts the two architecture sets agree.
+* No architecture-suffixed tag is pullable, so an install cannot pull machine
+  code for the wrong architecture.
+* A release whose git tag disagrees with the manifest `version` stops the
+  workflow, because the Supervisor would otherwise be told to pull a tag nobody
+  published.
+* Each architecture carries its own provenance and SBOM attestation, produced by
+  the build that pushed it.

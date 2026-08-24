@@ -10,6 +10,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod addon;
 pub mod config;
 pub mod domain;
 pub mod gate;

@@ -127,6 +127,9 @@ non-trivial merge. Create them alongside the crate.
   contain no clock read and no I/O.
 * **G7 — docs match code.** `config::tests::the_shipped_example_compiles`
   parses `guestpass.example.yaml` and asserts the URL list it denotes.
+  `addon::tests::the_shipped_addon_manifest_matches_this_struct` parses
+  `addon/config.yaml` and asserts its option keys and defaults equal
+  `addon::Options`.
 * **G8 — lints.** `#![deny(unsafe_code)]` crate-wide with one documented
   `#[allow]` in `tunnel::spawn` for `PR_SET_PDEATHSIG`, plus
   `cargo clippy --all-targets -- -D warnings`. (`forbid` cannot be locally
@@ -137,6 +140,11 @@ non-trivial merge. Create them alongside the crate.
   into opening one.
 * **G10 — workflow hygiene.** `actionlint`, `zizmor --persona=pedantic`,
   `yamllint`, and ShellCheck run over the workflows and `ci/gates.sh`.
+* **G11 — add-on publish parity.** `ci/gates.sh` asserts that the `arch:` list
+  in `addon/config.yaml` equals the architecture set of the `deploy.yaml` build
+  matrix, and that `image:` carries no `{arch}` placeholder. The Supervisor
+  installs `<image>:<version>`, so an architecture the manifest offers and the
+  matrix never builds is an install that fails at pull time.
 
 A gate that fires marks the change for reconsideration. Weakening a gate to pass
 requires the owner.
@@ -153,10 +161,16 @@ published release, or a manual dispatch. There is deliberately no
 token after a workflow a fork PR started. Ordering with CI is a `needs:` edge
 instead.
 
-The publish job holds `packages: write` and is the only job in the repository
-with any write capability. It restores **no cache**: build caches are writable
-by workflows that run untrusted pull request code, so a job producing a
-published artifact treats them as untrusted input and rebuilds from source.
+The `build` and `manifest` jobs hold `packages: write` and are the only jobs in
+the repository with any write capability. They restore **no cache**: build
+caches are writable by workflows that run untrusted pull request code, so a job
+producing a published artifact treats them as untrusted input and rebuilds from
+source.
+
+`build` runs one runner per architecture, each compiling for the machine it runs
+on: `ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for aarch64. Each pushes by
+digest under no tag, and `manifest` joins the digests into the one list that
+`addon/config.yaml` names.
 
 Every `uses:` is pinned to a full commit SHA. Every job declares
 `timeout-minutes`. No `${{ }}` is interpolated into a `run:` block; values cross

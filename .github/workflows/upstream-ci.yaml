@@ -42,7 +42,7 @@ jobs:
       - name: Test
         run: cargo test --locked
 
-      - name: Gates G5 and G6
+      - name: Gates G5, G6, G9, and G11
         run: ./ci/gates.sh
 
   # Gate G1: the dependency allowlist. Separated from `rust` because it fetches

@@ -1,0 +1,16 @@
+---
+configuration:
+  policy_file:
+    name: Policy file
+    description: >-
+      Path to the guestpass YAML file. The add-on configuration directory is
+      mounted at /config.
+  log_level:
+    name: Log level
+    description: >-
+      Verbosity of this log. GUESTPASS_LOG overrides it.
+  emit_tex:
+    name: Print the pass document
+    description: >-
+      Write the printable LaTeX document to this log at startup. Copy it into
+      Overleaf or a local file to get the PDF.

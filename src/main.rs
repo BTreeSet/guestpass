@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use clap::{Parser, Subcommand};
+use guestpass::addon::Options;
 use guestpass::config::{RawConfig, compile};
 use guestpass::domain::MIN_TOKEN_CHARS;
 use guestpass::ha::{HaLink, Readings, run_poller};
@@ -26,28 +27,32 @@ struct Cli {
 enum Command {
     /// Serve the guest surface and supervise the tunnel.
     Serve {
-        #[arg(long, default_value = "/config/guestpass.yaml")]
-        config: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Print every URL the config denotes, with the call each one makes.
     Explain {
-        #[arg(long, default_value = "/config/guestpass.yaml")]
-        config: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Write a printable LaTeX document to stdout.
     Tex {
-        #[arg(long, default_value = "/config/guestpass.yaml")]
-        config: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Print a fresh 128-bit token.
     GenToken,
 }
 
 fn main() -> std::process::ExitCode {
+    // The add-on's options, or their defaults everywhere else. Read before the
+    // subscriber, because one of them chooses the subscriber's filter.
+    let options = Options::read();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("GUESTPASS_LOG")
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(options.directive())),
         )
         .init();
 
@@ -57,12 +62,14 @@ fn main() -> std::process::ExitCode {
             println!("{}", gen_token());
             Ok(())
         }
-        Some(Command::Explain { config }) => load(&config).map(|(reg, _)| explain(&reg)),
-        Some(Command::Tex { config }) => load(&config).map(|(reg, raw)| {
+        Some(Command::Explain { config }) => {
+            load(&resolve(config, &options)).map(|(reg, _)| explain(&reg))
+        }
+        Some(Command::Tex { config }) => load(&resolve(config, &options)).map(|(reg, raw)| {
             print!("{}", tex::document(&reg, &head_tokens(&raw)));
         }),
-        Some(Command::Serve { config }) => serve(&config),
-        None => serve(Path::new("/config/guestpass.yaml")),
+        Some(Command::Serve { config }) => serve(&resolve(config, &options), &options),
+        None => serve(&options.policy_file, &options),
     };
 
     match result {
@@ -72,6 +79,12 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
+}
+
+/// Where the config lives: the flag when given, then the add-on option, which
+/// itself defaults to the convention.
+fn resolve(flag: Option<PathBuf>, options: &Options) -> PathBuf {
+    flag.unwrap_or_else(|| options.policy_file.clone())
 }
 
 fn gen_token() -> String {
@@ -123,10 +136,16 @@ fn explain(registry: &Registry) {
     }
 }
 
-fn serve(config: &Path) -> Result<(), String> {
+fn serve(config: &Path, options: &Options) -> Result<(), String> {
     let (registry, raw) = load(config)?;
     let token = raw.tunnel.token.clone();
     explain(&registry);
+
+    // An add-on install has no shell, so the log is where the printable document
+    // can be collected from.
+    if options.emit_tex {
+        print!("{}", tex::document(&registry, &head_tokens(&raw)));
+    }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

@@ -16,7 +16,10 @@ homeassistant_api: true
 arch:
   - aarch64
   - amd64
-image: ghcr.io/btreeset/guestpass/{arch}
+# One multi-arch manifest, which the Supervisor resolves to this machine's
+# architecture. `.github/workflows/deploy.yaml` publishes it under this exact
+# name, tagged with the `version` above.
+image: ghcr.io/btreeset/guestpass
 map:
   - addon_config:rw
 # No ports, and no network listener at all: the guest surface is a UNIX socket
@@ -24,9 +27,12 @@ map:
 ports: {}
 # No ingress: there is no management surface to serve.
 ingress: false
+# guestpass reads these from /data/options.json at startup.
 options:
   policy_file: /config/guestpass.yaml
   log_level: info
+  emit_tex: false
 schema:
   policy_file: str
   log_level: list(trace|debug|info|warning|error)?
+  emit_tex: bool?

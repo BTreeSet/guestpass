@@ -51,4 +51,28 @@ while IFS= read -r line; do
 done < <(grep -rnE "$impure" src/policy src/gate --include='*.rs' || true)
 [ "$core_dirty" -eq 0 ] && note "clean"
 
+# --- G11: the add-on manifest and the publish matrix agree ------------------
+# The Supervisor installs `<image>:<version>` for the architecture it runs on.
+# An architecture the manifest offers and the matrix never builds is an install
+# that fails at pull time, on a machine the maintainer does not own.
+echo "G11: add-on architectures match the publish matrix"
+manifest_arch=$(awk '/^arch:/{f=1;next} f&&/^[[:space:]]*-[[:space:]]/{print $2;next} f{exit}' \
+  addon/config.yaml | sort)
+matrix_arch=$(sed -n 's/^[[:space:]]*-[[:space:]]*arch:[[:space:]]*//p' \
+  .github/workflows/deploy.yaml | sort)
+
+if [ "$manifest_arch" != "$matrix_arch" ]; then
+  note "addon/config.yaml offers: $(echo "$manifest_arch" | tr '\n' ' ')"
+  note "deploy.yaml builds:       $(echo "$matrix_arch" | tr '\n' ' ')"
+  fail=1
+fi
+
+# A `{arch}` placeholder names one image per architecture. This repository
+# publishes a single manifest list, so the placeholder would name nothing.
+if grep -q '^image:.*{arch}' addon/config.yaml; then
+  note "addon/config.yaml image still carries an {arch} placeholder"
+  fail=1
+fi
+[ "$fail" -eq 0 ] && note "clean"
+
 exit "$fail"
