@@ -137,8 +137,11 @@ UNIX domain socket and opens no network port. The tunnel's public hostname names
   configuration a later edit could flip.
 * Exactly one peer reaches the listener and it is cloudflared in this container,
   so `CF-Connecting-IP` is trustworthy and per-IP limits hold.
-* The socket needs a writable directory. A tmpfs supplies it, which keeps the
-  read-only rootfs property: a tmpfs is not persistence.
+* The socket needs a writable directory. The image ships `/run/guestpass` as a
+  symlink to `/dev/shm/guestpass`, the one tmpfs every OCI runtime mounts, so a
+  read-only rootfs holds the socket with no mount flag. `bind` follows a
+  symlinked parent directory, so the path guestpass binds and the path named in
+  the portal are one string. A tmpfs is memory, so statelessness holds.
 * The socket path is a crate constant, not a setting. How guestpass and
   cloudflared are wired is an implementation detail of this program, so the fact
   lives in one place and the owner names it once in the portal. Its length and

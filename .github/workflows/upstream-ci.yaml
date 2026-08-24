@@ -171,6 +171,13 @@ jobs:
       # here means something started persisting state.
       - name: Statelessness
         run: |
-          docker run --rm --read-only --network none \
-            --tmpfs /run/guestpass:rw,noexec,nosuid,size=1m \
-            guestpass:ci gen-token
+          docker run --rm --read-only --network none guestpass:ci gen-token
+
+      # The socket directory redirects to the tmpfs the runtime already mounts.
+      # A build that dereferenced the symlink would need a --tmpfs flag back.
+      - name: Socket directory redirects to /dev/shm
+        run: |
+          docker create --name probe guestpass:ci >/dev/null
+          docker export probe > image.tar
+          docker rm probe >/dev/null
+          tar -tvf image.tar | grep -q 'run/guestpass -> /dev/shm/guestpass'

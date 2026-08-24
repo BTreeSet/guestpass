@@ -118,8 +118,9 @@ non-trivial merge. Create them alongside the crate.
 * **G3 — barrier lock.** Not yet mechanical. `Authorized` and `Admitted` have
   private fields, so the barrier holds by module privacy; a `trybuild`
   compile-fail case proving it is still owed.
-* **G4 — statelessness.** CI runs the built image with `--read-only`,
-  `--network none`, and only a tmpfs for the socket directory.
+* **G4 — statelessness.** CI runs the built image with `--read-only` and
+  `--network none`, and asserts the image ships `/run/guestpass` as a symlink to
+  `/dev/shm/guestpass`.
 * **G5 — banned identifiers.** `ci/gates.sh`, with an inline
   `// ALLOW-BANNED: <reason>` escape.
 * **G6 — pure core.** `ci/gates.sh` asserts `src/policy/` and `src/gate/`

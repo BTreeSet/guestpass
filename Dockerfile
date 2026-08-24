@@ -38,6 +38,9 @@ RUN curl -fsSL -o /cloudflared \
       "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${TARGETARCH}" \
     && chmod +x /cloudflared
 
+# The runtime stage has no shell, so the socket directory is assembled here.
+RUN mkdir -p /runtree && ln -s /dev/shm/guestpass /runtree/guestpass
+
 # ---- Stage 4: runtime ------------------------------------------------------
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=backend /app/target/release/guestpass /usr/local/bin/guestpass
@@ -45,7 +48,9 @@ COPY --from=connector /cloudflared /usr/local/bin/cloudflared
 
 # No port is published and none is opened: guestpass listens on a UNIX socket at
 # /run/guestpass/guest.sock, which cloudflared reaches inside this container.
-# Under a read-only rootfs, mount a tmpfs there.
+# That directory is a symlink to /dev/shm/guestpass, the one tmpfs every OCI
+# runtime mounts, so a read-only rootfs holds the socket with no mount flag.
+COPY --from=connector /runtree /run
 USER nonroot
 ENTRYPOINT ["/usr/local/bin/guestpass"]
 CMD ["serve"]

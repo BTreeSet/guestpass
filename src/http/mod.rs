@@ -86,8 +86,17 @@ fn bind_socket_at(path: &std::path::Path) -> Result<tokio::net::UnixListener, So
     // The directory carries the access decision: a caller that cannot traverse
     // it cannot reach the socket whatever the socket's own mode says.
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(io)?;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(io)?;
+        // The image ships this directory as a symlink to /dev/shm/guestpass, the
+        // one tmpfs every OCI runtime mounts, so a read-only rootfs needs no
+        // mount flag. `bind` follows a symlinked parent; `create_dir_all` stops
+        // at a dangling one, so resolve it first. On a host where the directory
+        // is real, `read_link` fails and the path stands.
+        let dir = match std::fs::read_link(dir) {
+            Ok(target) if target.is_absolute() => target,
+            _ => dir.to_owned(),
+        };
+        std::fs::create_dir_all(&dir).map_err(io)?;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(io)?;
     }
 
     // A leftover socket file blocks bind. Removing one whose owner is still
@@ -457,6 +466,8 @@ fn said(reading: Reading, verb: Verb) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::FileTypeExt as _;
+
     use super::*;
 
     /// The compile-time assertions above cover length and absoluteness; this
@@ -465,6 +476,33 @@ mod tests {
     fn the_socket_path_is_fixed_and_absolute() {
         assert_eq!(SOCKET_PATH, "/run/guestpass/guest.sock");
         assert!(SOCKET_PATH.len() <= MAX_SOCKET_PATH);
+    }
+
+    /// The image ships the socket directory as a symlink into /dev/shm, and the
+    /// link is dangling until the first bind. `bind` follows a symlinked parent,
+    /// so the inode must land in the target while the bound path stays the one
+    /// named in the portal.
+    #[tokio::test]
+    async fn binding_follows_a_dangling_symlinked_directory() {
+        let base = std::env::temp_dir().join(format!("gpl-{}", std::process::id()));
+        let target = base.join("shm");
+        let link = base.join("run");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("base");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+        assert!(!target.exists(), "the link starts dangling");
+
+        let _listener = bind_socket_at(&link.join("guest.sock")).expect("binds");
+
+        let landed = target.join("guest.sock");
+        assert!(
+            std::fs::symlink_metadata(&landed)
+                .expect("socket")
+                .file_type()
+                .is_socket(),
+            "the socket inode belongs to the link target"
+        );
+        std::fs::remove_dir_all(&base).ok();
     }
 
     // UnixListener::bind registers with the reactor, so this needs a runtime.

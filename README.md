@@ -66,12 +66,10 @@ services:
       GUESTPASS_HA_TOKEN_FILE: /run/secrets/ha_token
     volumes:
       - ./guestpass.yaml:/config/guestpass.yaml:ro
-    tmpfs:
-      - /run/guestpass
 ```
 
-guestpass keeps no state and runs read-only. The tmpfs holds one UNIX socket and
-nothing else.
+guestpass keeps no state and runs read-only. Its socket sits on the tmpfs the
+container runtime already mounts.
 
 ## Configuration
 
