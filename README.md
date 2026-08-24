@@ -4,12 +4,13 @@ Give a visitor a QR code that turns on your living room lamp from anywhere on th
 internet.
 
 guestpass exposes a closed vocabulary of six Home Assistant calls to anyone
-holding a high-entropy URL. Home Assistant stays on the LAN. The only route in is
-an outbound Cloudflare Tunnel.
+holding a high-entropy URL. Home Assistant stays on the LAN. guestpass opens no
+network port at all: it listens on a UNIX socket that cloudflared reaches inside
+the same container, and the only route in is an outbound Cloudflare Tunnel.
 
 ```
 guest phone ── https ──▶ Cloudflare edge ──▶ [tunnel] ──▶ guestpass ──▶ Home Assistant
-                                                          (loopback)     (LAN only)
+                                                       unix socket        (LAN only)
 ```
 
 Every call it can make:
@@ -65,9 +66,12 @@ services:
       GUESTPASS_HA_TOKEN_FILE: /run/secrets/ha_token
     volumes:
       - ./guestpass.yaml:/config/guestpass.yaml:ro
+    tmpfs:
+      - /run/guestpass
 ```
 
-guestpass keeps no state and runs read-only.
+guestpass keeps no state and runs read-only. The tmpfs holds one UNIX socket and
+nothing else.
 
 ## Configuration
 
@@ -107,13 +111,17 @@ Tokens are inline, so this file is a secret: mode `0600`, same handling as
 
 `tunnel.token` is a connector token from Cloudflare Zero Trust. Cloudflare holds
 the routing configuration and cloudflared fetches it, so guestpass runs the
-connector and takes no part in ingress. Point the tunnel's public hostname at
-`http://localhost:8099`, which is the port guestpass logs on startup.
+connector and takes no part in ingress.
 
-Omitting `tunnel.token` starts a quick tunnel. Cloudflare assigns a random
-`trycloudflare.com` hostname, guestpass logs the resulting URLs, and the hostname
-changes on every restart. This suits trying guestpass out; printed cards need a
-connector token.
+In the Zero Trust portal, set the public hostname's service to exactly:
+
+```
+unix:/run/guestpass/guest.sock
+```
+
+That path is fixed by guestpass and is the one thing you configure on the
+Cloudflare side. `tunnel.public_url` is the hostname you pointed at it, which
+guestpass uses to print URLs and cards.
 
 Bot Fight Mode on the tunnel hostname blocks NFC tags, microcontrollers, and
 `curl`.

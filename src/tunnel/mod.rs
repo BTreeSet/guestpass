@@ -3,14 +3,6 @@
 
 use std::time::{Duration, Instant};
 
-/// How the connector reaches Cloudflare.
-pub enum Ingress {
-    /// Cloudflare holds the routing configuration and cloudflared fetches it.
-    Connector { token: String },
-    /// Cloudflare assigns a `trycloudflare.com` hostname, new on every run.
-    Quick,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreflightFault {
     BinaryMissing,
@@ -372,7 +364,7 @@ const METRICS_PORT: u16 = 20241;
 ///
 /// Transitions are logged uniformly here, so instrumentation stays at the effect
 /// boundary and out of `step`.
-pub async fn supervise(ingress: Ingress, guest_port: u16) {
+pub async fn supervise(token: String) {
     let mut state = Supervised::Stopped;
     let mut child: Option<tokio::process::Child> = None;
 
@@ -382,7 +374,7 @@ pub async fn supervise(ingress: Ingress, guest_port: u16) {
     loop {
         if let Some(act) = pending.take() {
             match act {
-                Act::Spawn => match spawn(&ingress, guest_port) {
+                Act::Spawn => match spawn(&token) {
                     Ok(proc) => {
                         let id = proc.id().unwrap_or(0);
                         child = Some(proc);
@@ -454,8 +446,11 @@ fn apply(state: Supervised, event: Event, pending: &mut Option<Act>) -> Supervis
     t.next
 }
 
-#[allow(unsafe_code, reason = "PR_SET_PDEATHSIG is the only guarantee that survives SIGKILL of the parent")]
-fn spawn(ingress: &Ingress, guest_port: u16) -> Result<tokio::process::Child, PreflightFault> {
+#[allow(
+    unsafe_code,
+    reason = "PR_SET_PDEATHSIG is the only guarantee that survives SIGKILL of the parent"
+)]
+fn spawn(token: &str) -> Result<tokio::process::Child, PreflightFault> {
     let metrics = format!("127.0.0.1:{METRICS_PORT}");
     let mut cmd = tokio::process::Command::new("cloudflared");
     cmd.arg("tunnel")
@@ -463,20 +458,18 @@ fn spawn(ingress: &Ingress, guest_port: u16) -> Result<tokio::process::Child, Pr
         // runtime from the network.
         .arg("--no-autoupdate")
         .arg("--metrics")
-        .arg(&metrics);
+        .arg(&metrics)
+        .arg("run")
+        .arg("--token")
+        .arg(token);
 
-    match ingress {
-        Ingress::Connector { token } => {
-            cmd.arg("run").arg("--token").arg(token);
-        }
-        Ingress::Quick => {
-            cmd.arg("--url")
-                .arg(format!("http://127.0.0.1:{guest_port}"));
-        }
-    }
+    // Cloudflare holds the routing configuration, so cloudflared takes no origin
+    // argument here. The tunnel's public hostname must name `unix:<socket>` in
+    // the dashboard; cloudflared decodes remote config through the same
+    // `validateIngress` that handles the `unix:` scheme locally.
 
     // cloudflared must never outlive guestpass: an orphaned connector fronting a
-    // dead port is worse than no tunnel.
+    // dead socket is worse than no tunnel.
     cmd.kill_on_drop(true);
 
     #[cfg(target_os = "linux")]

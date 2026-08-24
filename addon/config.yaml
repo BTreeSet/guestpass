@@ -19,7 +19,8 @@ arch:
 image: ghcr.io/btreeset/guestpass/{arch}
 map:
   - addon_config:rw
-# No ports. The only route in is the outbound Cloudflare tunnel.
+# No ports, and no network listener at all: the guest surface is a UNIX socket
+# that only cloudflared, in this container, can reach.
 ports: {}
 # No ingress: there is no management surface to serve.
 ingress: false

@@ -42,8 +42,9 @@ Runtime adds no authority. *G7*
 `Admitted` have private fields and no public constructors. `ha::execute` accepts
 `Admitted`. *G3*
 
-**I-5 — The Cloudflare Tunnel is the sole ingress.** The guest listener binds
-loopback. The container maps no host ports. *G9*
+**I-5 — The Cloudflare Tunnel is the sole ingress.** The guest surface is a UNIX
+socket at a path fixed in code. No network listener exists and the container maps
+no ports. *G9*
 
 **I-6 — The config file and the add-on log are the management interface.** *G1, G5*
 
@@ -76,7 +77,7 @@ When a change matches a row, name the row, cite the decision, and stop.
 | C-7 | Verbs are absolute; relative and toggle forms stay unrepresentable | D-7 |
 | C-8 | URLs carry no signature, nonce, or embedded expiry | D-3 |
 | C-9 | Token hashing is SHA-256 for lookup; key stretching is out of scope | P4, D-9 |
-| C-10 | The listener binds loopback; the container maps no host ports | D-6 |
+| C-10 | The listener is a UNIX socket at a constant path; no network listener, no host ports, and the path is never a setting | D-6 |
 | C-11 | TLS termination, ACME, and certificate storage stay outside the program | D-6 |
 | C-12 | Process supervision is the in-crate `step` machine | D-8 |
 | C-13 | Responses issue no redirects and no URL canonicalisation | D-7 |
@@ -118,7 +119,7 @@ non-trivial merge. Create them alongside the crate.
   private fields, so the barrier holds by module privacy; a `trybuild`
   compile-fail case proving it is still owed.
 * **G4 — statelessness.** CI runs the built image with `--read-only`,
-  `--network none`, and no writable volume.
+  `--network none`, and only a tmpfs for the socket directory.
 * **G5 — banned identifiers.** `ci/gates.sh`, with an inline
   `// ALLOW-BANNED: <reason>` escape.
 * **G6 — pure core.** `ci/gates.sh` asserts `src/policy/` and `src/gate/`
@@ -129,8 +130,10 @@ non-trivial merge. Create them alongside the crate.
   `#[allow]` in `tunnel::spawn` for `PR_SET_PDEATHSIG`, plus
   `cargo clippy --all-targets -- -D warnings`. (`forbid` cannot be locally
   overridden, so the gate is `deny` plus a single justified exception.)
-* **G9 — loopback bind.** `http::bind_addr` rejects any non-loopback address,
-  with `http::tests::only_loopback_may_carry_the_guest_surface`.
+* **G9 — no network listener.** `ci/gates.sh` greps `src/` for `TcpListener`,
+  `SocketAddr`, and `0.0.0.0`. Proving the absence is stronger than checking a
+  bind address: a program that cannot name a TCP listener cannot be configured
+  into opening one.
 * **G10 — workflow hygiene.** `actionlint`, `zizmor --persona=pedantic`,
   `yamllint`, and ShellCheck run over the workflows and `ci/gates.sh`.
 

@@ -42,7 +42,7 @@ const PREAMBLE: &str = r"\documentclass[a4paper,11pt]{article}
 /// which is why the standalone binary and the add-on agree.
 #[must_use]
 pub fn document(registry: &Registry, tokens: &[(String, String)]) -> String {
-    let base = registry.base_url().unwrap_or("https://HOST");
+    let base = registry.base_url();
     let mut out = String::from(PREAMBLE);
     let mut cards = 0usize;
 
@@ -122,7 +122,7 @@ mod tests {
         let raw: crate::config::RawConfig = serde_yaml_ng::from_str(
             r#"
 version: 1
-tunnel: { public_url: "https://gp.example.com" }
+tunnel: {token: "eyJhIjoidGVzdCJ9", public_url: "https://gp.example.com"}
 devices: [{ id: lamp, label: "Living room lamp", entity: light.a }]
 passes: [{ id: tag, tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"], device: lamp, verb: on }]
 "#,

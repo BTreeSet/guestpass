@@ -4,10 +4,10 @@
 version: 1
 
 tunnel:
-  # Connector token from Cloudflare Zero Trust. Omit it to start a quick tunnel
-  # whose hostname changes on every restart.
+  # Connector token from Cloudflare Zero Trust. Point the tunnel's public
+  # hostname at unix:/run/guestpass/guest.sock; guestpass opens no network port.
   token: "eyJhIjoiN2Q0..."
-  # Used only when printing URLs and cards.
+  # The hostname that tunnel serves, used to print URLs and cards.
   public_url: "https://gp.example.com"
 
 devices:

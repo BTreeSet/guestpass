@@ -172,5 +172,5 @@ jobs:
       - name: Statelessness
         run: |
           docker run --rm --read-only --network none \
-            --tmpfs /tmp:rw,noexec,nosuid,size=1m \
+            --tmpfs /run/guestpass:rw,noexec,nosuid,size=1m \
             guestpass:ci gen-token

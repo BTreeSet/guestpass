@@ -1,7 +1,6 @@
 //! Shell: wiring, signals, shutdown ordering. Decisions live in the pure core.
 
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +10,7 @@ use clap::{Parser, Subcommand};
 use guestpass::config::{RawConfig, compile};
 use guestpass::domain::MIN_TOKEN_CHARS;
 use guestpass::ha::{HaLink, Readings, run_poller};
-use guestpass::http::{AppState, bind_addr, router};
+use guestpass::http::{AppState, bind_socket, router};
 use guestpass::policy::{Registry, reachable};
 use guestpass::{tex, tunnel};
 use rand::Rng as _;
@@ -29,8 +28,6 @@ enum Command {
     Serve {
         #[arg(long, default_value = "/config/guestpass.yaml")]
         config: PathBuf,
-        #[arg(long, default_value_t = 8099)]
-        port: u16,
     },
     /// Print every URL the config denotes, with the call each one makes.
     Explain {
@@ -64,8 +61,8 @@ fn main() -> std::process::ExitCode {
         Some(Command::Tex { config }) => load(&config).map(|(reg, raw)| {
             print!("{}", tex::document(&reg, &head_tokens(&raw)));
         }),
-        Some(Command::Serve { config, port }) => serve(config, port),
-        None => serve(PathBuf::from("/config/guestpass.yaml"), 8099),
+        Some(Command::Serve { config }) => serve(&config),
+        None => serve(Path::new("/config/guestpass.yaml")),
     };
 
     match result {
@@ -106,7 +103,7 @@ fn head_tokens(raw: &RawConfig) -> Vec<(String, String)> {
 
 /// The complete denotation of a config, printed where the owner already looks.
 fn explain(registry: &Registry) {
-    let base = registry.base_url().unwrap_or("");
+    let base = registry.base_url();
     for pass in registry.passes() {
         tracing::info!(
             pass = %pass.id,
@@ -126,8 +123,9 @@ fn explain(registry: &Registry) {
     }
 }
 
-fn serve(config: PathBuf, port: u16) -> Result<(), String> {
-    let (registry, _) = load(&config)?;
+fn serve(config: &Path) -> Result<(), String> {
+    let (registry, raw) = load(config)?;
+    let token = raw.tunnel.token.clone();
     explain(&registry);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -147,12 +145,12 @@ fn serve(config: PathBuf, port: u16) -> Result<(), String> {
             buckets: Mutex::new(HashMap::new()),
         });
 
-        // Loopback only (AGENTS.md I-5, gate G9).
-        let addr = bind_addr(Ipv4Addr::LOCALHOST.into(), port).map_err(|e| e.to_string())?;
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .map_err(|e| format!("bind {addr}: {e}"))?;
-        tracing::info!(%addr, "guest surface listening; point the tunnel here");
+        // A UNIX socket, never a network address (AGENTS.md I-5, gate G9).
+        let listener = bind_socket().map_err(|e| e.to_string())?;
+        tracing::info!(
+            "guest surface listening; set the tunnel's public hostname service to unix:{}",
+            guestpass::http::SOCKET_PATH
+        );
 
         tokio::spawn(run_poller(
             Arc::clone(&link),
@@ -161,8 +159,7 @@ fn serve(config: PathBuf, port: u16) -> Result<(), String> {
             Duration::from_secs(15),
         ));
 
-        let ingress = ingress_from(&config);
-        let supervisor = tokio::spawn(tunnel::supervise(ingress, port));
+        let supervisor = tokio::spawn(tunnel::supervise(token));
 
         let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
@@ -173,23 +170,6 @@ fn serve(config: PathBuf, port: u16) -> Result<(), String> {
         supervisor.abort();
         outcome
     })
-}
-
-fn ingress_from(config: &Path) -> tunnel::Ingress {
-    match std::fs::read_to_string(config)
-        .ok()
-        .and_then(|t| serde_yaml_ng::from_str::<RawConfig>(&t).ok())
-        .and_then(|raw| raw.tunnel.token)
-    {
-        Some(token) => tunnel::Ingress::Connector { token },
-        None => {
-            tracing::warn!(
-                "no tunnel token: starting a quick tunnel. The hostname changes on every \
-                 restart, so printed cards need a connector token."
-            );
-            tunnel::Ingress::Quick
-        }
-    }
 }
 
 const _: () = assert!(MIN_TOKEN_CHARS == 26);

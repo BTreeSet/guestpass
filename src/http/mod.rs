@@ -1,8 +1,10 @@
 //! The guest surface. Serves the embedded page, folds the request path, and
-//! fires admitted calls. This router is bound to loopback and reached only
-//! through the Cloudflare tunnel.
+//! fires admitted calls. This router listens on a UNIX socket and is reached
+//! only by cloudflared, in this container, through the Cloudflare tunnel.
 
 use std::collections::HashMap;
+use std::os::unix::fs::PermissionsExt as _;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
@@ -33,22 +35,73 @@ pub struct AppState {
     pub buckets: Mutex<HashMap<u16, Bucket>>,
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("the guest listener must bind loopback; refusing {0}")]
-pub struct NotLoopback(pub std::net::IpAddr);
+#[derive(Debug, thiserror::Error)]
+pub enum SocketError {
+    #[error("another guestpass is already listening on {0}")]
+    InUse(PathBuf),
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
-/// Gate G9. The security argument for trusting `CF-Connecting-IP` is exactly
-/// this bind address: one hop reaches the listener and it is always cloudflared
-/// in this container's own namespace.
+/// Where the guest surface listens.
+///
+/// This is a constant, not a setting. How guestpass and cloudflared are wired
+/// together is an implementation detail of this program; the owner's side of it
+/// is one line in the Zero Trust portal naming `unix:` plus this path. Making it
+/// configurable would create two places for the same fact to be wrong.
+pub const SOCKET_PATH: &str = "/run/guestpass/guest.sock";
+
+/// `sockaddr_un.sun_path` holds 108 bytes including the terminating NUL.
+const MAX_SOCKET_PATH: usize = 107;
+
+// The path is fixed, so its preconditions are proved at compile time rather than
+// checked at startup.
+const _: () = assert!(SOCKET_PATH.len() <= MAX_SOCKET_PATH);
+const _: () = assert!(SOCKET_PATH.as_bytes()[0] == b'/');
+
+/// Bind the guest surface. It listens on a UNIX domain socket and never on a
+/// network address (AGENTS.md I-5, gate G9).
+///
+/// A socket is a filesystem object, so no container network setting can expose
+/// it: reachability rests on directory permissions rather than on a bind address
+/// plus a namespace configuration that a later edit could flip.
 ///
 /// # Errors
-/// Returns [`NotLoopback`] for any address reachable from outside the namespace.
-pub fn bind_addr(ip: std::net::IpAddr, port: u16) -> Result<std::net::SocketAddr, NotLoopback> {
-    if ip.is_loopback() {
-        Ok(std::net::SocketAddr::new(ip, port))
-    } else {
-        Err(NotLoopback(ip))
+/// Returns [`SocketError`] when a live guestpass already holds the socket, or on
+/// any filesystem failure.
+pub fn bind_socket() -> Result<tokio::net::UnixListener, SocketError> {
+    bind_socket_at(std::path::Path::new(SOCKET_PATH))
+}
+
+fn bind_socket_at(path: &std::path::Path) -> Result<tokio::net::UnixListener, SocketError> {
+    let io = |source: std::io::Error| SocketError::Io {
+        path: path.to_owned(),
+        source,
+    };
+
+    // The directory carries the access decision: a caller that cannot traverse
+    // it cannot reach the socket whatever the socket's own mode says.
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(io)?;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(io)?;
     }
+
+    // A leftover socket file blocks bind. Removing one whose owner is still
+    // alive would steal that instance's traffic, so probe before unlinking.
+    if path.exists() {
+        if std::os::unix::net::UnixStream::connect(path).is_ok() {
+            return Err(SocketError::InUse(path.to_owned()));
+        }
+        std::fs::remove_file(path).map_err(io)?;
+    }
+
+    let listener = tokio::net::UnixListener::bind(path).map_err(io)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
+    Ok(listener)
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -404,19 +457,40 @@ fn said(reading: Reading, verb: Verb) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
-
     use super::*;
 
+    /// The compile-time assertions above cover length and absoluteness; this
+    /// records the value they are asserted against.
     #[test]
-    fn only_loopback_may_carry_the_guest_surface() {
-        assert!(bind_addr(Ipv4Addr::LOCALHOST.into(), 8099).is_ok());
-        assert!(bind_addr(Ipv6Addr::LOCALHOST.into(), 8099).is_ok());
-        assert_eq!(
-            bind_addr(Ipv4Addr::UNSPECIFIED.into(), 8099).unwrap_err(),
-            NotLoopback(Ipv4Addr::UNSPECIFIED.into()),
-            "0.0.0.0 would make the container's mapped port a bypass around the tunnel"
-        );
-        assert!(bind_addr(Ipv4Addr::new(192, 168, 1, 10).into(), 8099).is_err());
+    fn the_socket_path_is_fixed_and_absolute() {
+        assert_eq!(SOCKET_PATH, "/run/guestpass/guest.sock");
+        assert!(SOCKET_PATH.len() <= MAX_SOCKET_PATH);
+    }
+
+    // UnixListener::bind registers with the reactor, so this needs a runtime.
+    #[tokio::test]
+    async fn binding_creates_an_owner_only_socket_under_an_owner_only_directory() {
+        let dir = std::env::temp_dir().join(format!("gp-{}", std::process::id()));
+        let path = dir.join("guest.sock");
+        let listener = bind_socket_at(&path).expect("binds");
+
+        let socket_mode = std::fs::metadata(&path)
+            .expect("socket")
+            .permissions()
+            .mode();
+        assert_eq!(socket_mode & 0o777, 0o600, "socket must be owner-only");
+        let dir_mode = std::fs::metadata(&dir).expect("dir").permissions().mode();
+        assert_eq!(dir_mode & 0o777, 0o700, "directory must be owner-only");
+
+        // A stale socket left by a dead process is reclaimed rather than fatal.
+        drop(listener);
+        let reclaimed = bind_socket_at(&path).expect("a stale socket must be reclaimable");
+
+        // A socket a live process still holds is never stolen.
+        let err = bind_socket_at(&path).expect_err("in use");
+        assert!(matches!(err, SocketError::InUse(_)), "got {err}");
+
+        drop(reclaimed);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

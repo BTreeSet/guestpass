@@ -18,7 +18,6 @@ use crate::policy::{
 #[serde(deny_unknown_fields)]
 pub struct RawConfig {
     pub version: u8,
-    #[serde(default)]
     pub tunnel: RawTunnel,
     #[serde(default)]
     pub devices: Vec<RawDevice>,
@@ -26,15 +25,13 @@ pub struct RawConfig {
     pub passes: Vec<RawPass>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawTunnel {
-    /// Connector token from Cloudflare Zero Trust. Absent starts a quick tunnel.
-    #[serde(default)]
-    pub token: Option<String>,
-    /// Used only when printing URLs.
-    #[serde(default)]
-    pub public_url: Option<String>,
+    /// Connector token from Cloudflare Zero Trust.
+    pub token: String,
+    /// The hostname the tunnel serves. Needed to print URLs and cards.
+    pub public_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,10 +240,7 @@ pub fn compile(raw: &RawConfig) -> Result<Registry, CompileErrors> {
             by_digest,
             passes.into_boxed_slice(),
             devices.into_boxed_slice(),
-            raw.tunnel
-                .public_url
-                .as_deref()
-                .map(|u| u.trim_end_matches('/').into()),
+            raw.tunnel.public_url.trim_end_matches('/').into(),
         ))
     } else {
         let mut out = String::new();
@@ -308,6 +302,7 @@ mod tests {
     const GOOD: &str = r#"
 version: 1
 tunnel:
+  token: "eyJhIjoidGVzdCJ9"
   public_url: "https://gp.example.com"
 devices:
   - id: lamp
@@ -326,8 +321,22 @@ passes:
     trigger: direct
 "#;
 
+    /// `tunnel` is required, and every fixture below is about something else.
+    /// Supply a valid block when the fixture does not carry its own, so each
+    /// test reads as the one thing it asserts.
+    const TUNNEL: &str = r#"
+tunnel:
+  token: "eyJhIjoidGVzdCJ9"
+  public_url: "https://gp.example.com"
+"#;
+
     fn parse(yaml: &str) -> RawConfig {
-        serde_yaml_ng::from_str(yaml).expect("yaml parses")
+        let text = if yaml.contains("tunnel:") {
+            yaml.to_owned()
+        } else {
+            format!("{yaml}{TUNNEL}")
+        };
+        serde_yaml_ng::from_str(&text).expect("yaml parses")
     }
 
     /// Gate G7: the example shipped with the repository must compile, so the
@@ -337,7 +346,7 @@ passes:
         let text = include_str!("../../guestpass.example.yaml");
         let raw: RawConfig = serde_yaml_ng::from_str(text).expect("example parses");
         let reg = compile(&raw).expect("example compiles");
-        assert_eq!(reg.base_url(), Some("https://gp.example.com"));
+        assert_eq!(reg.base_url(), "https://gp.example.com");
         let urls: Vec<String> = reg
             .passes()
             .iter()
@@ -349,11 +358,7 @@ passes:
             .collect();
         assert_eq!(
             urls,
-            [
-                "/t/<guest>/lamp/on",
-                "/t/<guest>/lamp/off",
-                "/t/<door-tag>",
-            ]
+            ["/t/<guest>/lamp/on", "/t/<guest>/lamp/off", "/t/<door-tag>",]
         );
     }
 
@@ -363,7 +368,7 @@ passes:
         assert_eq!(reg.passes().len(), 2);
         assert_eq!(reg.devices().len(), 1);
         assert_eq!(reg.pinned().len(), 1);
-        assert_eq!(reg.base_url(), Some("https://gp.example.com"));
+        assert_eq!(reg.base_url(), "https://gp.example.com");
         assert!(matches!(reg.pass(PassIx(0)).scope, Scope::Pass { .. }));
         assert!(matches!(reg.pass(PassIx(1)).scope, Scope::Call { .. }));
         assert_eq!(reg.pass(PassIx(1)).trigger, Trigger::Direct);

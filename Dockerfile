@@ -43,7 +43,9 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=backend /app/target/release/guestpass /usr/local/bin/guestpass
 COPY --from=connector /cloudflared /usr/local/bin/cloudflared
 
-# No host port is published: the only route in is the outbound tunnel.
+# No port is published and none is opened: guestpass listens on a UNIX socket at
+# /run/guestpass/guest.sock, which cloudflared reaches inside this container.
+# Under a read-only rootfs, mount a tmpfs there.
 USER nonroot
 ENTRYPOINT ["/usr/local/bin/guestpass"]
 CMD ["serve"]

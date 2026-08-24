@@ -67,8 +67,8 @@ An attacker holds every token in the config.
 They can turn declared lights, switches, and fans on and off, up to
 `quota.per_minute` each, and read the on/off state of those devices. That is the
 complete list. They cannot enumerate other entities, reach any other service,
-read state beyond the projection, or reach Home Assistant, which is bound to the
-LAN and addressed through six constant paths on loopback.
+read state beyond the projection, or reach Home Assistant, which stays on the LAN
+and is addressed through six constant paths.
 
 ## Residual risks
 

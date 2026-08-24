@@ -114,16 +114,16 @@ served at.
 
 ---
 
-## D-6 — The Cloudflare Tunnel is the sole ingress
+## D-6 — The Cloudflare Tunnel is the sole ingress, over a UNIX socket
 
 **Premise.** The deployment target is a home network behind NAT or CGNAT, run by
-someone who does not want to manage certificates or port forwarding.
+someone who does not want to manage certificates or port forwarding. Printed
+cards make a stable hostname a requirement (D-3, I-9).
 
-**Decision.** cloudflared holds the only inbound path. The guest listener binds
-loopback and refuses any other address. The container maps no host ports.
-Cloudflare terminates TLS and holds the routing configuration, which cloudflared
-fetches from a connector token. Without a token, cloudflared opens a quick tunnel
-under an assigned `trycloudflare.com` hostname.
+**Decision.** cloudflared holds the only inbound path, configured by a connector
+token; Cloudflare holds the routing and terminates TLS. guestpass listens on a
+UNIX domain socket and opens no network port. The tunnel's public hostname names
+`unix:<socket>`.
 
 **Consequences.**
 
@@ -131,17 +131,25 @@ under an assigned `trycloudflare.com` hostname.
   outside the program.
 * Ingress configuration is outside the program, so there is nothing to generate,
   validate, or keep in sync with Cloudflare.
-* Exactly one hop reaches the listener, always on loopback, so `CF-Connecting-IP`
-  is trustworthy and per-IP limits hold.
+* A socket is a filesystem object, so no container network setting can expose the
+  guest surface. Reachability rests on directory permissions (0700) and the
+  socket mode (0600) rather than on a bind address plus a namespace
+  configuration a later edit could flip.
+* Exactly one peer reaches the listener and it is cloudflared in this container,
+  so `CF-Connecting-IP` is trustworthy and per-IP limits hold.
+* The socket needs a writable directory. A tmpfs supplies it, which keeps the
+  read-only rootfs property: a tmpfs is not persistence.
+* The socket path is a crate constant, not a setting. How guestpass and
+  cloudflared are wired is an implementation detail of this program, so the fact
+  lives in one place and the owner names it once in the portal. Its length and
+  absoluteness are proved at compile time rather than checked at startup.
 * Cloudflare reads request paths in plaintext, tokens included. Pass authority is
   one device and one verb, quota-bounded, which sets what such a log entry is
   worth.
-* A quick tunnel's hostname changes per run, so it suits evaluation and printed
-  cards need a connector token.
 * A Cloudflare outage means guests cannot reach the lamp, including guests
   standing in the room.
-* The guest listener serves the six calls and the page. Metrics and health live
-  on loopback only.
+* A connector token is required, because a printed pass URL must keep working
+  across restarts (I-9).
 
 ---
 

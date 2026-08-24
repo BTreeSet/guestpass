@@ -114,7 +114,7 @@ pub struct Registry {
     passes: Box<[CompiledPass]>,
     devices: Box<[Device]>,
     pinned: Box<[EntityId]>,
-    base_url: Option<Box<str>>,
+    base_url: Box<str>,
 }
 
 impl Registry {
@@ -123,7 +123,7 @@ impl Registry {
         by_digest: HashMap<TokenDigest, TokenBinding>,
         passes: Box<[CompiledPass]>,
         devices: Box<[Device]>,
-        base_url: Option<Box<str>>,
+        base_url: Box<str>,
     ) -> Self {
         let mut pinned: Vec<EntityId> = devices.iter().map(|d| d.entity.clone()).collect();
         pinned.sort_unstable_by_key(ToString::to_string);
@@ -169,8 +169,8 @@ impl Registry {
     }
 
     #[must_use]
-    pub fn base_url(&self) -> Option<&str> {
-        self.base_url.as_deref()
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 }
 
@@ -337,7 +337,7 @@ mod tests {
             HashMap::new(),
             vec![pass].into_boxed_slice(),
             devices.into_boxed_slice(),
-            None,
+            "https://gp.example.com".into(),
         )
     }
 

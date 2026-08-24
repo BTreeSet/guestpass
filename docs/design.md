@@ -275,6 +275,35 @@ The projection from a Home Assistant state payload into `Reading` is an
 allowlist total function, so a new upstream attribute stays invisible until
 named.
 
+### Ingress
+
+```rust
+pub const SOCKET_PATH: &str = "/run/guestpass/guest.sock";
+
+const _: () = assert!(SOCKET_PATH.len() <= MAX_SOCKET_PATH);   // sun_path holds 108 bytes
+const _: () = assert!(SOCKET_PATH.as_bytes()[0] == b'/');
+
+pub fn bind_socket() -> Result<tokio::net::UnixListener, SocketError>;
+```
+
+The guest surface is a UNIX domain socket and there is no network listener. A
+socket is a filesystem object, so no container network setting can expose it:
+reachability rests on the directory mode (0700) and the socket mode (0600).
+
+The path is a constant. How guestpass and cloudflared are wired is an
+implementation detail of this program, so the fact lives in one place and the
+owner names it once, as the public hostname's service in the Zero Trust portal.
+Its length and absoluteness are proved at compile time. The runtime errors that
+remain are a live socket already held and plain filesystem failure.
+
+cloudflared runs as `cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:<m>
+run --token <T>`. Cloudflare holds the routing, so no origin argument is passed
+here; cloudflared decodes remote configuration through the same `validateIngress`
+that handles the `unix:` scheme locally.
+
+`tunnel.public_url` is required, so `explain` and the LaTeX emitter always render
+whole URLs.
+
 ### Tunnel supervisor
 
 A Mealy machine over the child process. `step` is pure, so a fake clock and a

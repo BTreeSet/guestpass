@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The AGENTS.md gates that are not cargo tests.
 #
-# G2 (vocabulary lock) and G9 (loopback bind) are `cargo test`; G1 is
-# cargo-deny. This script owns G5 and G6, which are properties of the source
-# text rather than of the compiled program.
+# G2 (vocabulary lock) is `cargo test` and G1 is cargo-deny. This script owns
+# G5, G6, and G9, which are properties of the source text rather than of the
+# compiled program.
 set -euo pipefail
 
 fail=0
@@ -24,6 +24,18 @@ while IFS= read -r line; do
   fail=1
 done < <(grep -rniE "$banned" src/ --include='*.rs' || true)
 [ "$fail" -eq 0 ] && note "clean"
+
+# --- G9: no network listener exists ----------------------------------------
+# Proving the absence is stronger than checking a bind address: if the program
+# cannot name a TCP listener, no configuration can expose one.
+echo "G9: no TCP listener in src/"
+listener_dirty=0
+while IFS= read -r line; do
+  note "$line"
+  listener_dirty=1
+  fail=1
+done < <(grep -rnE 'TcpListener|SocketAddr|0\.0\.0\.0' src/ --include='*.rs' || true)
+[ "$listener_dirty" -eq 0 ] && note "clean"
 
 # --- G6: the pure core stays pure ------------------------------------------
 # policy/ and gate/ take time as an argument and perform no I/O, so their
