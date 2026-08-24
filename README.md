@@ -58,7 +58,7 @@ For Home Assistant Container, supply a long-lived access token:
 ```yaml
 services:
   guestpass:
-    image: ghcr.io/btreemap/guestpass:latest
+    image: ghcr.io/btreeset/guestpass:latest
     read_only: true
     environment:
       GUESTPASS_HA_URL: http://homeassistant:8123
@@ -95,7 +95,7 @@ passes:
   - id: door-tag                    # arity 0 → https://HOST/t/<token>
     tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"]
     device: lamp
-    verb: on
+    verb: "on"
     trigger: direct
     quota: { per_minute: 6 }
 ```

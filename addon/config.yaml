@@ -5,7 +5,7 @@ slug: guestpass
 description: >-
   Give a visitor a QR code that turns on one light, from anywhere, without
   exposing Home Assistant.
-url: "https://github.com/BTreeMap/guestpass"
+url: "https://github.com/BTreeSet/guestpass"
 startup: services
 # Docker's tini reaps orphaned children. It is a waitpid loop, not a service
 # manager: cloudflared is supervised in-process (AGENTS.md C-12).
@@ -16,7 +16,7 @@ homeassistant_api: true
 arch:
   - aarch64
   - amd64
-image: ghcr.io/btreemap/guestpass/{arch}
+image: ghcr.io/btreeset/guestpass/{arch}
 map:
   - addon_config:rw
 # No ports. The only route in is the outbound Cloudflare tunnel.

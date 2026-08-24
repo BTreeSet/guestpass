@@ -330,6 +330,33 @@ passes:
         serde_yaml_ng::from_str(yaml).expect("yaml parses")
     }
 
+    /// Gate G7: the example shipped with the repository must compile, so the
+    /// documentation cannot drift away from the parser.
+    #[test]
+    fn the_shipped_example_compiles() {
+        let text = include_str!("../../guestpass.example.yaml");
+        let raw: RawConfig = serde_yaml_ng::from_str(text).expect("example parses");
+        let reg = compile(&raw).expect("example compiles");
+        assert_eq!(reg.base_url(), Some("https://gp.example.com"));
+        let urls: Vec<String> = reg
+            .passes()
+            .iter()
+            .flat_map(|p| {
+                crate::policy::reachable(&reg, p)
+                    .into_iter()
+                    .map(move |(suffix, _, _)| format!("/t/<{}>{suffix}", p.id))
+            })
+            .collect();
+        assert_eq!(
+            urls,
+            [
+                "/t/<guest>/lamp/on",
+                "/t/<guest>/lamp/off",
+                "/t/<door-tag>",
+            ]
+        );
+    }
+
     #[test]
     fn a_good_config_compiles() {
         let reg = compile(&parse(GOOD)).expect("compiles");
@@ -431,6 +458,28 @@ passes:
                 .accepted_until
                 .is_some()
         );
+    }
+
+    /// YAML 1.1 reads a bare `on` as boolean true. serde_yaml_ng follows the
+    /// 1.2 core schema and reads it as a string, so both spellings must land on
+    /// the same verb; other YAML tooling in the ecosystem disagrees, which is
+    /// why the shipped examples quote it.
+    #[test]
+    fn a_bare_on_is_the_verb_not_a_boolean() {
+        for spelling in ["on", "\"on\"", "'on'"] {
+            let yaml = format!(
+                r#"
+version: 1
+devices: [{{ id: lamp, label: Lamp, entity: light.a }}]
+passes: [{{ id: p, tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"], device: lamp, verb: {spelling} }}]
+"#
+            );
+            let reg = compile(&parse(&yaml)).unwrap_or_else(|e| panic!("{spelling}: {}", e.0));
+            let Scope::Call { ref call } = reg.pass(PassIx(0)).scope else {
+                panic!("{spelling}: expected a saturated scope")
+            };
+            assert_eq!(call.service(), "light/turn_on", "spelling {spelling}");
+        }
     }
 
     #[test]

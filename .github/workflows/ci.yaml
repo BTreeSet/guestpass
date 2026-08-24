@@ -1,0 +1,29 @@
+---
+name: CI
+
+# Trust boundary: this workflow runs on fork pull requests, so everything it
+# executes is attacker-controlled (source, build.rs, npm lifecycle scripts).
+# It therefore receives no secrets, no registry credentials, and no write
+# capability of any kind. Publishing lives in deploy.yaml, which only fires on
+# events a fork cannot cause.
+#
+# yamllint disable-line rule:truthy
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    uses: ./.github/workflows/upstream-ci.yaml
+    permissions:
+      contents: read

@@ -33,6 +33,24 @@ pub struct AppState {
     pub buckets: Mutex<HashMap<u16, Bucket>>,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("the guest listener must bind loopback; refusing {0}")]
+pub struct NotLoopback(pub std::net::IpAddr);
+
+/// Gate G9. The security argument for trusting `CF-Connecting-IP` is exactly
+/// this bind address: one hop reaches the listener and it is always cloudflared
+/// in this container's own namespace.
+///
+/// # Errors
+/// Returns [`NotLoopback`] for any address reachable from outside the namespace.
+pub fn bind_addr(ip: std::net::IpAddr, port: u16) -> Result<std::net::SocketAddr, NotLoopback> {
+    if ip.is_loopback() {
+        Ok(std::net::SocketAddr::new(ip, port))
+    } else {
+        Err(NotLoopback(ip))
+    }
+}
+
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/t/{token}", get(entry).post(entry).head(probe))
@@ -381,5 +399,24 @@ fn said(reading: Reading, verb: Verb) -> String {
         Reading::Live { on } | Reading::Stale { on } => if on { "On." } else { "Off." }.to_owned(),
         Reading::Offline => "Sent, but the device reports unavailable.".to_owned(),
         Reading::Unknown => format!("Sent {}.", verb.token()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use super::*;
+
+    #[test]
+    fn only_loopback_may_carry_the_guest_surface() {
+        assert!(bind_addr(Ipv4Addr::LOCALHOST.into(), 8099).is_ok());
+        assert!(bind_addr(Ipv6Addr::LOCALHOST.into(), 8099).is_ok());
+        assert_eq!(
+            bind_addr(Ipv4Addr::UNSPECIFIED.into(), 8099).unwrap_err(),
+            NotLoopback(Ipv4Addr::UNSPECIFIED.into()),
+            "0.0.0.0 would make the container's mapped port a bypass around the tunnel"
+        );
+        assert!(bind_addr(Ipv4Addr::new(192, 168, 1, 10).into(), 8099).is_err());
     }
 }

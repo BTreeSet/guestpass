@@ -3,6 +3,12 @@
 //!
 //! See `docs/design.md` for the model and `AGENTS.md` for the invariants that
 //! govern changes to it.
+//!
+//! Gate G8: unsafe code is denied crate-wide. The one exception is
+//! `tunnel::spawn`, which sets `PR_SET_PDEATHSIG` so cloudflared cannot outlive
+//! this process, and carries its own justification.
+
+#![deny(unsafe_code)]
 
 pub mod config;
 pub mod domain;

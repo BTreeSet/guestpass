@@ -1,7 +1,7 @@
 //! Shell: wiring, signals, shutdown ordering. Decisions live in the pure core.
 
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 use guestpass::config::{RawConfig, compile};
 use guestpass::domain::MIN_TOKEN_CHARS;
 use guestpass::ha::{HaLink, Readings, run_poller};
-use guestpass::http::{AppState, router};
+use guestpass::http::{AppState, bind_addr, router};
 use guestpass::policy::{Registry, reachable};
 use guestpass::{tex, tunnel};
 use rand::Rng as _;
@@ -147,9 +147,8 @@ fn serve(config: PathBuf, port: u16) -> Result<(), String> {
             buckets: Mutex::new(HashMap::new()),
         });
 
-        // Loopback only. The security argument for trusting CF-Connecting-IP is
-        // exactly this bind address (AGENTS.md I-5).
-        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        // Loopback only (AGENTS.md I-5, gate G9).
+        let addr = bind_addr(Ipv4Addr::LOCALHOST.into(), port).map_err(|e| e.to_string())?;
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .map_err(|e| format!("bind {addr}: {e}"))?;

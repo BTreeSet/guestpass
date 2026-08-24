@@ -1,0 +1,19 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 100
+    level: warning
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: true
+  comments:
+    min-spaces-from-content: 1
+  document-start:
+    present: true
+
+ignore: |
+  .github/skills/
+  frontend/node_modules/
+  target/

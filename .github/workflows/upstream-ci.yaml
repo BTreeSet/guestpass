@@ -1,0 +1,176 @@
+---
+name: Reusable CI
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+
+# No ambient capability. Each job below asks for exactly the effects it performs,
+# and none of them writes anything outside its own runner.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Independent leaves. `rust` needs no frontend bundle: build.rs writes a
+  # placeholder under GUESTPASS_SKIP_FRONTEND_BUILD, which is all rust-embed
+  # requires to compile. The two run in parallel and join at `image`.
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GUESTPASS_SKIP_FRONTEND_BUILD: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Gates G5 and G6
+        run: ./ci/gates.sh
+
+  # Gate G1: the dependency allowlist. Separated from `rust` because it fetches
+  # the advisory database and fails for reasons unrelated to the code.
+  deps:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25  # v2.1.1
+        with:
+          command: check advisories bans licenses sources
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` runs lifecycle scripts from the lockfile. On a fork PR that is
+      # attacker code, which is why this job holds no secrets and no write scope.
+      - name: Install
+        run: npm ci
+        working-directory: frontend
+
+      - name: Typecheck and build
+        run: npm run build
+        working-directory: frontend
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+          if-no-files-found: error
+
+  workflows:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      # actionlint also ShellChecks embedded `run:` blocks and ci/gates.sh.
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color
+
+      - name: ShellCheck the gate script
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo koalaman/shellcheck:v0.11.0 ci/gates.sh
+
+      # zizmor audits the workflows themselves for privilege and injection flaws.
+      - name: yamllint
+        run: uvx yamllint@1.37.1 -c .yamllint .
+
+      - name: zizmor
+        run: uvx zizmor@1.10.0 --persona=pedantic .github/workflows/
+
+  # The join. Builds the real image, and never pushes: publication is a
+  # capability this workflow does not hold.
+  image:
+    name: Image (amd64)
+    needs: [rust, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+
+      - name: Build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: guestpass:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Gate G4: the image must work with no writable path anywhere. A failure
+      # here means something started persisting state.
+      - name: Statelessness
+        run: |
+          docker run --rm --read-only --network none \
+            --tmpfs /tmp:rw,noexec,nosuid,size=1m \
+            guestpass:ci gen-token

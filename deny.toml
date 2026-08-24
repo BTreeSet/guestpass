@@ -1,0 +1,53 @@
+# Gate G1 (AGENTS.md): the dependency allowlist.
+#
+# Each ban names the invariant it protects. A crate here is not merely
+# unnecessary: pulling it in would mean the design changed without the decision
+# being made.
+
+[graph]
+all-features = true
+# Judge the tree we actually ship. Without this, crates reachable only on wasi,
+# uefi, or windows targets are evaluated and reported, none of which are linked
+# into the images this repository builds.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Exactly the licenses present in the shipped tree. An unmatched allowance is a
+# warning, so this list stays honest as dependencies change.
+allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+deny = [
+  # C-3: the process holds no state.
+  { name = "sqlx" }, { name = "rusqlite" }, { name = "diesel" },
+  { name = "redis" }, { name = "sled" }, { name = "rocksdb" },
+  # C-4: no sessions or cookies. The URL is the whole credential.
+  { name = "tower-sessions" }, { name = "tower-cookies" }, { name = "cookie" },
+  # C-9: tokens are 128-bit CSPRNG output; key stretching is out of scope.
+  { name = "argon2" }, { name = "bcrypt" }, { name = "pbkdf2" }, { name = "scrypt" },
+  # C-2, C-6: no authenticated surface, no token formats to parse.
+  { name = "jsonwebtoken" }, { name = "oauth2" },
+  # C-11: Cloudflare terminates TLS; this program runs no edge.
+  { name = "rustls-acme" }, { name = "acme-lib" }, { name = "openssl" },
+  # C-15: config is declarative data, never a program.
+  { name = "mlua" }, { name = "rhai" }, { name = "tera" }, { name = "handlebars" },
+  { name = "minijinja" }, { name = "cel-interpreter" },
+  # C-19: rendering happens in the owner's toolchain (D-10).
+  { name = "qrcode" }, { name = "qrcodegen" }, { name = "fast_qr" },
+  { name = "image" }, { name = "printpdf" }, { name = "resvg" }, { name = "usvg" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

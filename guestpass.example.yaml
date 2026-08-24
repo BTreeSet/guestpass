@@ -1,3 +1,4 @@
+---
 # Copy to guestpass.yaml and edit. This file carries pass tokens inline, so the
 # copy is a secret: mode 0600. `guestpass gen-token` prints a fresh one.
 version: 1
@@ -20,12 +21,12 @@ passes:
     label: "Guest pass"
     tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
     devices: [lamp]
-    quota: { per_minute: 6 }
+    quota: {per_minute: 6}
 
   # Arity 0: https://HOST/t/<token> fires on GET, for an NFC tag.
   - id: door-tag
     tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"]
     device: lamp
-    verb: on
+    verb: "on"
     trigger: direct
-    quota: { per_minute: 6 }
+    quota: {per_minute: 6}

@@ -108,35 +108,55 @@ A change touching an invariant needs the owner.
 Prose here is advisory. Gates are mechanical, and they exist before the first
 non-trivial merge. Create them alongside the crate.
 
-* **G1 — dependency allowlist.** `cargo-deny` with an explicit `[bans]` list.
-  Denied by name at minimum: `sqlx`, `rusqlite`, `diesel`, `redis`, `sled`,
-  `jsonwebtoken`, `argon2`, `bcrypt`, `pbkdf2`, `tower-sessions`, `tower-cookies`,
-  `rustls-acme`, `openssl`, `mlua`, `rhai`, `tera`, `handlebars`, `qrcode`,
-  `qrcodegen`, `image`, `printpdf`, `resvg`, `usvg`.
-* **G2 — vocabulary lock.** A test asserting `Verb::COUNT == 2`,
-  `Controllable::COUNT == 3`, and that `service_of` over the full cartesian
-  product equals a hardcoded six-element literal. Its failure message cites I-1.
-* **G3 — barrier lock.** `trybuild` compile-fail cases proving `Authorized` and
-  `Admitted` are unconstructable outside `policy` and `gate`, and that
-  `ha::execute` accepts only `Admitted`.
-* **G4 — statelessness.** A CI job running the container with `--read-only` and
-  no writable volumes through a full request smoke test.
-* **G5 — banned identifiers.** A grep over `src/**/*.rs` for `cookie`, `session`,
-  `jwt`, `sqlite`, `redirect`, `nonce`, `expires_in`, `refresh_token`. An inline
-  `// ALLOW-BANNED: <reason>` suppresses one line; writing the reason is the
-  point.
-* **G6 — pure core.** A grep asserting `src/policy/` and `src/gate/` contain no
-  `Instant::now`, `SystemTime::now`, `std::fs`, `tokio`, or `reqwest`.
-* **G7 — docs match code.** A test that parses the config example in `README.md`,
-  runs `compile` and `explain`, and asserts the URL list matches the README table.
-* **G8 — lints.** `#![forbid(unsafe_code)]` crate-wide, with one documented
-  `#[allow(unsafe_code)]` in `tunnel::spawn` for `PR_SET_PDEATHSIG`.
-  `cargo clippy -- -D warnings` in CI.
-* **G9 — loopback bind.** A test that the guest listener constructor rejects any
-  non-loopback address.
+* **G1 — dependency allowlist.** `deny.toml`, run by `cargo-deny` in CI. Each
+  ban names the invariant it protects, and the license allowlist names exactly
+  the licenses in the shipped tree.
+* **G2 — vocabulary lock.** `domain::tests::vocabulary_is_closed` asserts
+  `Verb::ALL.len() == 2`, `Controllable::ALL.len() == 3`, and that `service_of`
+  over the full product equals a hardcoded six-element literal.
+* **G3 — barrier lock.** Not yet mechanical. `Authorized` and `Admitted` have
+  private fields, so the barrier holds by module privacy; a `trybuild`
+  compile-fail case proving it is still owed.
+* **G4 — statelessness.** CI runs the built image with `--read-only`,
+  `--network none`, and no writable volume.
+* **G5 — banned identifiers.** `ci/gates.sh`, with an inline
+  `// ALLOW-BANNED: <reason>` escape.
+* **G6 — pure core.** `ci/gates.sh` asserts `src/policy/` and `src/gate/`
+  contain no clock read and no I/O.
+* **G7 — docs match code.** `config::tests::the_shipped_example_compiles`
+  parses `guestpass.example.yaml` and asserts the URL list it denotes.
+* **G8 — lints.** `#![deny(unsafe_code)]` crate-wide with one documented
+  `#[allow]` in `tunnel::spawn` for `PR_SET_PDEATHSIG`, plus
+  `cargo clippy --all-targets -- -D warnings`. (`forbid` cannot be locally
+  overridden, so the gate is `deny` plus a single justified exception.)
+* **G9 — loopback bind.** `http::bind_addr` rejects any non-loopback address,
+  with `http::tests::only_loopback_may_carry_the_guest_surface`.
+* **G10 — workflow hygiene.** `actionlint`, `zizmor --persona=pedantic`,
+  `yamllint`, and ShellCheck run over the workflows and `ci/gates.sh`.
 
 A gate that fires marks the change for reconsideration. Weakening a gate to pass
 requires the owner.
+
+## CI trust boundary
+
+`ci.yaml` runs on fork pull requests, so everything it executes is
+attacker-controlled: the source, `build.rs`, and npm lifecycle scripts. It holds
+`contents: read` and nothing else, receives no secrets, and publishes nothing.
+
+`deploy.yaml` fires only on events a fork cannot cause: a push to `main`, a
+published release, or a manual dispatch. There is deliberately no
+`workflow_run` trigger, which would run with the base repository's elevated
+token after a workflow a fork PR started. Ordering with CI is a `needs:` edge
+instead.
+
+The publish job holds `packages: write` and is the only job in the repository
+with any write capability. It restores **no cache**: build caches are writable
+by workflows that run untrusted pull request code, so a job producing a
+published artifact treats them as untrusted input and rebuilds from source.
+
+Every `uses:` is pinned to a full commit SHA. Every job declares
+`timeout-minutes`. No `${{ }}` is interpolated into a `run:` block; values cross
+through `env:` and are referenced as quoted shell variables.
 
 ## Repository shape
 

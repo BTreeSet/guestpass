@@ -454,6 +454,7 @@ fn apply(state: Supervised, event: Event, pending: &mut Option<Act>) -> Supervis
     t.next
 }
 
+#[allow(unsafe_code, reason = "PR_SET_PDEATHSIG is the only guarantee that survives SIGKILL of the parent")]
 fn spawn(ingress: &Ingress, guest_port: u16) -> Result<tokio::process::Child, PreflightFault> {
     let metrics = format!("127.0.0.1:{METRICS_PORT}");
     let mut cmd = tokio::process::Command::new("cloudflared");
