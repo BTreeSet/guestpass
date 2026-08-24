@@ -44,10 +44,10 @@ The claim is about the past, which is why rotation is the control
 Guessing costs 2¹²⁷ expected requests against a rate-limited endpoint. Discovery
 is the vector that matters, and it has three surfaces:
 
-**Certificate Transparency.** Public certificates are logged within minutes and
-scanned immediately. A single-label subdomain is covered by Cloudflare's
-Universal SSL wildcard and needs no certificate of its own, keeping the name out
-of the logs.
+**The hostname.** Certificate Transparency logs are public and scanned within
+minutes of an issuance, so a hostname that carries its own certificate is known
+shortly after it exists. Discovery of the hostname leaves 2¹²⁷ expected requests
+to reach a pass.
 
 **The 404.** Requests reaching the correct hostname with a wrong path arrive at
 guestpass. The response carries no product name, no version header, and no
@@ -77,13 +77,12 @@ LAN and addressed through six constant paths on loopback.
 than an optional one.
 
 **Presence inference.** The on/off state of a light indicates whether someone is
-home. This applies to interactive passes, which need to show device state.
+home. This applies to passes that render a page, which shows device state.
 Direct-trigger passes expose no read path.
 
-**Cloudflare sees `/t/` tokens.** TLS terminates at the edge, so paths appear in
-Cloudflare's logs. The `/g#` fragment form keeps interactive tokens local to the
-browser. Direct-trigger tokens are saturated to one call and quota-bounded, which
-sets the ceiling on what such a log entry is worth.
+**Cloudflare sees tokens.** TLS terminates at the edge, so request paths appear
+in Cloudflare's logs. A pass carries one device and one verb under a rate quota,
+which sets the ceiling on what such a log entry is worth.
 
 **Nuisance in the small hours.** A leaked token can flip a light at 3am until
 rotated. The `Window::Daily` variant bounds hours of use when wanted.

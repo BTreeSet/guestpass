@@ -287,6 +287,39 @@ states it can achieve: a reading names the verb that would be a no-op. A
 The projection from a Home Assistant state payload into `Reading` is an allowlist
 total function, so a new upstream attribute stays invisible until named.
 
+### Ingress
+
+```rust
+pub enum Ingress {
+    Connector { token: SecretString },   // Cloudflare holds the routing config
+    Quick,                               // Cloudflare assigns a trycloudflare.com hostname
+}
+```
+
+`Connector` runs `cloudflared tunnel --no-autoupdate run --token <T>`. Routing
+lives at Cloudflare and cloudflared fetches it, so guestpass contributes nothing
+to ingress configuration and has nothing to keep in sync.
+
+`Quick` runs `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:<port>`.
+The assigned hostname changes per run.
+
+Both spawn with `--metrics 127.0.0.1:<m>`, which carries the readiness probe.
+
+The public base URL is needed to print URLs, never to serve them:
+
+```rust
+base: watch::Sender<Option<Url>>
+```
+
+`Connector` sets it from `tunnel.public_url` at load, leaving it `None` when the
+owner omits that key, in which case `explain` prints paths. `Quick` sets it when
+cloudflared announces the assigned hostname, and `explain` reprints on change.
+
+The announced hostname is the one value read from cloudflared's stderr, and it is
+informational: a hostname that never appears leaves `base` at `None`. Control
+decisions come from `/ready`, so a change in log format costs a printed URL and
+no supervision behaviour.
+
 ### Tunnel supervisor
 
 A Mealy machine over the child process. `step` is pure, so a fake clock and a

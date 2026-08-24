@@ -28,18 +28,19 @@ interface.
 
 ## URLs
 
+A pass is a high-entropy path segment. Later segments apply arguments.
+
 ```
-https://gp.example.com/g#K7QF3M2X9WPLNA4RTVBC6DHJ8Z          tap-to-control page
-https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/lamp/on  device and verb in path
+https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z          control page
+https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/lamp/on  device and verb
 https://gp.example.com/t/P2LX8KJ4NRQ7WM3VBZ9CDT6HFA          one fixed call
 ```
 
-The `/g#` form carries the token in the URL fragment, which browsers keep local.
-It reaches no server log, no `Referer` header, and no Cloudflare log. Hand this
-form to guests who open a page.
+A pass that stops short of a full call renders a page listing what remains. A
+pass that names a full call fires it.
 
-The `/t/` form serves clients that can only fetch a URL: NFC tags, ESP32 buttons,
-Apple Shortcuts, `curl`.
+The URL is the credential, so it serves every client that can fetch one: a
+browser, an NFC tag, an ESP32 button, an Apple Shortcut, `curl`.
 
 ## Install
 
@@ -64,26 +65,9 @@ services:
       GUESTPASS_HA_TOKEN_FILE: /run/secrets/ha_token
     volumes:
       - ./guestpass.yaml:/config/guestpass.yaml:ro
-      - ./tunnel.json:/config/tunnel.json:ro
 ```
 
 guestpass keeps no state and runs read-only.
-
-### Cloudflare
-
-1. Create a tunnel under **Zero Trust → Networks → Tunnels** and download its
-   credentials JSON.
-2. Point a single-label subdomain at it, such as `gp.example.com`. Cloudflare's
-   Universal SSL wildcard covers one level, so the name stays out of public
-   Certificate Transparency logs.
-3. Set **Bot Fight Mode** to off for that hostname. NFC tags and microcontrollers
-   cannot solve a JavaScript challenge.
-4. Leave **Cache Everything** disabled. A cached `200` stops the call reaching
-   guestpass.
-5. Leave **Cloudflare Access** off this hostname. Guests are anonymous.
-
-guestpass generates cloudflared's config, including a catch-all `404`, so one
-hostname reaches one port.
 
 ## Configuration
 
@@ -93,8 +77,8 @@ One file describes everything the internet can reach.
 version: 1
 
 tunnel:
-  hostname: gp.example.com
-  credentials_file: tunnel.json
+  token: "eyJhIjoiN2Q0..."               # from Cloudflare Zero Trust
+  public_url: "https://gp.example.com"   # optional, used when printing URLs
 
 devices:
   - id: lamp
@@ -102,7 +86,7 @@ devices:
     entity: light.living_room_floor
 
 passes:
-  - id: guest                       # arity 2 → https://HOST/g#<token>
+  - id: guest                       # arity 2 → https://HOST/t/<token>
     label: "Guest pass"
     tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
     devices: [lamp]
@@ -118,6 +102,23 @@ passes:
 
 Tokens are inline, so this file is a secret: mode `0600`, same handling as
 `secrets.yaml`. `guestpass gen-token` prints a fresh one.
+
+### Tunnel
+
+`tunnel.token` is a connector token from Cloudflare Zero Trust. Cloudflare holds
+the routing configuration and cloudflared fetches it, so guestpass runs the
+connector and takes no part in ingress. Point the tunnel's public hostname at
+`http://localhost:8099`, which is the port guestpass logs on startup.
+
+Omitting `tunnel.token` starts a quick tunnel. Cloudflare assigns a random
+`trycloudflare.com` hostname, guestpass logs the resulting URLs, and the hostname
+changes on every restart. This suits trying guestpass out; printed cards need a
+connector token.
+
+Bot Fight Mode on the tunnel hostname blocks NFC tags, microcontrollers, and
+`curl`.
+
+### Passes
 
 A pass's URL shape follows from the scope fields it declares:
 

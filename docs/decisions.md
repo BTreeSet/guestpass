@@ -99,14 +99,14 @@ in the config. Nothing the process learns at runtime needs to outlive it.
 
 **Decision.** The process persists nothing. Rate buckets and the entity-state
 cache are disposable. The container runs read-only. One YAML file holds
-everything, tokens inline. The guest SPA holds its token in memory and sends a
-bearer header.
+everything, tokens inline. A served page reads its token from the path it was
+served at.
 
 **Consequences.**
 
 * Restarts are free: no migrations, no backup, no corruption, no fsync.
-* A bearer header is not attached cross-origin by browsers, so cross-site request
-  forgery has no mechanism.
+* The URL carries the whole credential, so possession is the entire check and
+  there is no second secret for a page to hold or a request to forge.
 * The config file is a secret and needs `0600`.
 * "What is exposed?" is answered by reading one file with no layering or
   interpolation to resolve.
@@ -120,18 +120,23 @@ someone who does not want to manage certificates or port forwarding.
 
 **Decision.** cloudflared holds the only inbound path. The guest listener binds
 loopback and refuses any other address. The container maps no host ports.
-Cloudflare terminates TLS.
+Cloudflare terminates TLS and holds the routing configuration, which cloudflared
+fetches from a connector token. Without a token, cloudflared opens a quick tunnel
+under an assigned `trycloudflare.com` hostname.
 
 **Consequences.**
 
 * Certificate management, ACME, renewal, port forwarding, and dynamic DNS are all
   outside the program.
+* Ingress configuration is outside the program, so there is nothing to generate,
+  validate, or keep in sync with Cloudflare.
 * Exactly one hop reaches the listener, always on loopback, so `CF-Connecting-IP`
   is trustworthy and per-IP limits hold.
-* Cloudflare reads request paths in plaintext, which includes `/t/` tokens. The
-  `/g#` fragment form keeps interactive tokens local to the browser.
-* Guest hostname configuration belongs to the owner: single-label subdomain, Bot
-  Fight Mode off, Cache Everything off, Access off.
+* Cloudflare reads request paths in plaintext, tokens included. Pass authority is
+  one device and one verb, quota-bounded, which sets what such a log entry is
+  worth.
+* A quick tunnel's hostname changes per run, so it suits evaluation and printed
+  cards need a connector token.
 * A Cloudflare outage means guests cannot reach the lamp, including guests
   standing in the room.
 * The guest listener serves the six calls and the page. Metrics and health live
