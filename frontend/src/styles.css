@@ -1,0 +1,230 @@
+/* Token spine. Every value the components use is named here once.
+   Palette roles were mapped from the supplied ramps and verified against the
+   contrast floor; the measured ratios are recorded beside each role. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Canvas and ink -------------------------------------------------------- */
+  --canvas: #eff2f5;              /* dusty-denim-50 */
+  --surface: #ffffff;
+  --ink: #14191f;                 /* dusty-denim-900 : 15.72:1 on canvas */
+  --ink-muted: #4f637d;           /* dusty-denim-600 :  5.48:1 on canvas */
+
+  /* Accent. ink-black-500 measured 3.80:1 and was promoted one step. */
+  --accent: #30649c;              /* ink-black-600   :  5.45:1 on canvas */
+  --accent-hover: #244b75;        /* ink-black-700 */
+  --accent-active: #18324e;       /* ink-black-800 */
+  --on-accent: #ffffff;           /*                   6.12:1 on accent */
+
+  /* Borders that identify a control need 3:1; dusty-denim-300 measured 1.96. */
+  --border-control: #627c9d;      /* dusty-denim-500 :  3.82:1 on canvas */
+  --divider: #c0cad8;             /* dusty-denim-200 : decorative, exempt */
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 22px;
+  --space-6: 58px;
+
+  --shadow-card: rgba(0, 0, 0, 0.01) 0 2px 2px 0, rgba(0, 0, 0, 0.02) 0 4px 4px 0,
+    rgba(0, 0, 0, 0.04) 0 16px 24px 0;
+
+  --fast: 100ms;
+  --base: 200ms;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Anthropic Sans and Anthropic Mono are proprietary and absent from this
+     build. This is the design document's own declared fallback chain. */
+  --font-sans: "Anthropic Sans", Arial, Helvetica, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0e1116;            /* dusty-denim-950 */
+    --surface: #14191f;           /* dusty-denim-900 */
+    --ink: #eff2f5;               /* dusty-denim-50  : 16.83:1 on canvas */
+    --ink-muted: #8296b0;         /* dusty-denim-400 :  6.25:1 on canvas */
+    --accent: #6397cf;            /* ink-black-400   :  6.18:1 on canvas */
+    --accent-hover: #8ab1db;
+    --accent-active: #b1cbe7;
+    --on-accent: #0e1116;         /*                   6.18:1 on accent */
+    --border-control: #4f637d;    /* dusty-denim-600 :  3.07:1 on canvas */
+    --divider: #27313f;
+    --shadow-card: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  /* rem so the reader's own text scaling reaches 200% without loss (1.4.4). */
+  font-size: 1rem;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  -webkit-text-size-adjust: 100%;
+}
+
+.page {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.page__label {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+  letter-spacing: 0;
+}
+
+.page__title {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.25rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+/* Reading ---------------------------------------------------------------- */
+
+.reading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  letter-spacing: 0;
+}
+
+.reading__dot {
+  inline-size: 0.625rem;
+  block-size: 0.625rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-control);
+  flex: none;
+}
+
+.reading__dot--on { background: var(--accent); border-color: var(--accent); }
+.reading__dot--off { background: transparent; }
+.reading__dot--unknown { background: repeating-linear-gradient(45deg, var(--divider) 0 2px, transparent 2px 4px); }
+
+/* Actions ---------------------------------------------------------------- */
+
+.actions {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .actions--pair { grid-template-columns: 1fr 1fr; }
+}
+
+.action {
+  /* 56px exceeds the 24px AA floor by design: a guest taps this one-handed. */
+  min-block-size: 56px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+
+.action--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.action:hover:not(:disabled) { border-color: var(--accent); }
+.action--primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.action:active:not(:disabled) { transform: scale(0.985); }
+.action--primary:active:not(:disabled) { background: var(--accent-active); border-color: var(--accent-active); }
+
+.action:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.action:disabled { cursor: default; opacity: 0.6; }
+
+.action__state {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: inherit;
+  opacity: 0.8;
+  letter-spacing: 0;
+}
+
+/* Device list ------------------------------------------------------------ */
+
+.devices { display: grid; gap: var(--space-3); list-style: none; margin: 0; padding: 0; }
+
+.device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-block-size: 56px;
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--fast) var(--ease);
+}
+
+.device:hover { border-color: var(--accent); }
+.device:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.device__name { font-weight: 700; font-size: 1.0625rem; }
+
+/* Notice ----------------------------------------------------------------- */
+
+.notice {
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 0.9375rem;
+  letter-spacing: 0;
+}
+
+.notice__title { font-weight: 700; margin: 0 0 var(--space-1); }
+.notice__body { margin: 0; color: var(--ink-muted); }
+
+.skip {
+  position: absolute;
+  inline-size: 1px; block-size: 1px;
+  overflow: hidden; clip-path: inset(50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

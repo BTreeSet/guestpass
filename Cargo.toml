@@ -1,0 +1,68 @@
+[package]
+name = "guestpass"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+description = "Expose a closed vocabulary of six Home Assistant calls to guests holding a high-entropy URL."
+
+[lib]
+name = "guestpass"
+path = "src/lib.rs"
+
+[[bin]]
+name = "guestpass"
+path = "src/main.rs"
+
+[dependencies]
+# Web
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "process", "fs"] }
+tower-http = { version = "0.6", features = ["set-header", "trace", "limit"] }
+
+# Serialization. serde_yaml_ng is the maintained continuation of serde_yaml.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+
+# Embedded frontend
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+
+# Immutable config snapshot swapped wholesale on reload
+arc-swap = "1"
+
+# Token digests. Tokens are 128-bit CSPRNG output, so a fast hash is correct
+# here; key stretching addresses low-entropy secrets (see docs/decisions.md D-9).
+sha2 = "0.10"
+rand = "0.9"
+base32 = "0.5"
+
+# Wall clock for validity windows; std Instant covers supervisor scheduling.
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+
+# Home Assistant client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Config reload
+notify = "8"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Diagnostics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

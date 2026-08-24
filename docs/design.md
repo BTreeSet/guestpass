@@ -208,32 +208,19 @@ comparing `DeviceId`, which is O(D) with D ≈ 10 over contiguous memory.
 
 ## Denial
 
-Denials divide by producer, and the division carries the coarsening rule.
-
 ```rust
-pub enum ShapeDenial    { NoSuchDevice, NoSuchVerb, TrailingSegment }
-pub enum LivenessDenial { NotYetValid { from: OffsetDateTime },
-                          Expired     { at: OffsetDateTime },
-                          Retired,
-                          QuotaExhausted { retry_after: Duration } }
-
-pub enum Denial      { Shape(ShapeDenial), Liveness(LivenessDenial) }
-pub enum GuestDenial { NotPermitted,       Liveness(LivenessDenial) }
-
-pub const fn guest_facing(d: Denial) -> GuestDenial {
-    match d {
-        Denial::Shape(_)      => GuestDenial::NotPermitted,
-        Denial::Liveness(l)   => GuestDenial::Liveness(l),
-    }
-}
+pub enum ShapeDenial    { NoSuchDevice, NoSuchVerb, TrailingSegment }   // policy
+pub enum LivenessDenial { Expired, Retired, QuotaExhausted { retry_after } }  // gate
 ```
 
-`apply` produces `Shape`; `admit` produces `Liveness`. Coarsening is structural,
-so a new `ShapeDenial` variant is collapsed without an edit and probe responses
-stay uniform. Liveness detail reaches the guest, being actionable and public.
+The two are produced by different functions and eliminated at different sites,
+so they stay separate types.
 
-`GuestDenial` reuses `LivenessDenial`, so the two enums cannot drift.
+Every `ShapeDenial` renders as the same bare 404 the router serves for an
+unknown token and an unknown path, which keeps probe responses uniform without a
+coarsening function to maintain.
 
+`LivenessDenial` detail reaches the guest, being actionable and public.
 `Retired` returns plain text an Apple Shortcut can display: *"This pass has been
 replaced. Ask your host for a new one."*
 
@@ -261,64 +248,32 @@ is logged at detection and carried no further. The add-on requests
 
 ### Read path
 
-One shared upstream WebSocket. `subscribe_trigger` scoped to `Registry::pinned`
-while it is small, otherwise `subscribe_events` with an O(1) `HashSet` ingest
-filter.
-
-Per-entity `tokio::sync::watch` gives latest-wins coalescing. Guests read current
-state, so the channel is a cell and memory per subscription is constant.
+Every pinned entity is polled on a 15 second interval. At around ten entities on
+a LAN service that is 40 requests a minute, which removes the WebSocket client,
+its auth handshake, and its reconnect state machine from the program.
 
 ```rust
 pub enum Reading {
-    Unknown,                                       // no reading yet, or Home Assistant reports unknown
-    Offline,                                       // Home Assistant reports the device unavailable
-    Live  { state: Verb, as_of: OffsetDateTime },  // current
-    Stale { state: Verb, since: OffsetDateTime },  // last known, upstream link degraded
+    Unknown,                    // no reading yet, or Home Assistant reports unknown
+    Offline,                    // Home Assistant reports the device unavailable
+    Live  { on: bool },
+    Stale { on: bool },         // last known, upstream read failing
 }
 ```
 
-Four variants, each rendering differently, replacing a product of link-freshness
-and device-availability whose combinations were mostly meaningless.
+Four variants, each rendering differently. A failed read degrades `Live` to
+`Stale` and keeps the value, so a broken link shows what was true rather than
+nothing.
 
-Device state is typed as `Verb` because the vocabulary's verbs are exactly the
-states it can achieve: a reading names the verb that would be a no-op. A
-`Verb::Level(Percent)` extension keeps that alignment.
+Readings are a cache held in one `RwLock<HashMap<EntityId, Reading>>`. Losing
+them on restart costs one poll interval, which is why nothing here is persisted.
 
-The projection from a Home Assistant state payload into `Reading` is an allowlist
-total function, so a new upstream attribute stays invisible until named.
+After a fired call the entity is re-read immediately, so the response reports
+what happened rather than predicting it.
 
-### Ingress
-
-```rust
-pub enum Ingress {
-    Connector { token: SecretString },   // Cloudflare holds the routing config
-    Quick,                               // Cloudflare assigns a trycloudflare.com hostname
-}
-```
-
-`Connector` runs `cloudflared tunnel --no-autoupdate run --token <T>`. Routing
-lives at Cloudflare and cloudflared fetches it, so guestpass contributes nothing
-to ingress configuration and has nothing to keep in sync.
-
-`Quick` runs `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:<port>`.
-The assigned hostname changes per run.
-
-Both spawn with `--metrics 127.0.0.1:<m>`, which carries the readiness probe.
-
-The public base URL is needed to print URLs, never to serve them:
-
-```rust
-base: watch::Sender<Option<Url>>
-```
-
-`Connector` sets it from `tunnel.public_url` at load, leaving it `None` when the
-owner omits that key, in which case `explain` prints paths. `Quick` sets it when
-cloudflared announces the assigned hostname, and `explain` reprints on change.
-
-The announced hostname is the one value read from cloudflared's stderr, and it is
-informational: a hostname that never appears leaves `base` at `None`. Control
-decisions come from `/ready`, so a change in log format costs a printed URL and
-no supervision behaviour.
+The projection from a Home Assistant state payload into `Reading` is an
+allowlist total function, so a new upstream attribute stays invisible until
+named.
 
 ### Tunnel supervisor
 
@@ -424,6 +379,9 @@ http/     axum router, extractors, responses
 tunnel/   step (pure) + interpreter (shell)
 tex/      one-shot LaTeX emitter, unreachable from the service path
 ```
+
+`Registry` lives in `policy` because `Scope::Call` holds an `Authorized`, whose
+constructor is private to the barrier module.
 
 Dependencies point downward. `policy` depends on `domain` alone. `http` and `ha`
 are unnameable from `policy` and `gate`.

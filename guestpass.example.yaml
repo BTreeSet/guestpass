@@ -1,0 +1,31 @@
+# Copy to guestpass.yaml and edit. This file carries pass tokens inline, so the
+# copy is a secret: mode 0600. `guestpass gen-token` prints a fresh one.
+version: 1
+
+tunnel:
+  # Connector token from Cloudflare Zero Trust. Omit it to start a quick tunnel
+  # whose hostname changes on every restart.
+  token: "eyJhIjoiN2Q0..."
+  # Used only when printing URLs and cards.
+  public_url: "https://gp.example.com"
+
+devices:
+  - id: lamp
+    label: "Living room lamp"
+    entity: light.living_room_floor
+
+passes:
+  # Arity 2: https://HOST/t/<token>/lamp/on
+  - id: guest
+    label: "Guest pass"
+    tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
+    devices: [lamp]
+    quota: { per_minute: 6 }
+
+  # Arity 0: https://HOST/t/<token> fires on GET, for an NFC tag.
+  - id: door-tag
+    tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"]
+    device: lamp
+    verb: on
+    trigger: direct
+    quota: { per_minute: 6 }

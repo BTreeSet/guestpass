@@ -145,12 +145,13 @@ src/
   main.rs        shell: wiring, signals, shutdown ordering
   domain/        EntityId, Verb, Controllable, Vocabulary, TokenDigest, indices
   config/        RawConfig (serde) → compile → Registry     ← the one parse boundary
-  policy/        position, apply, authorize, Authorized     ← pure
+  policy/        Registry, position, apply, authorize, Authorized
   gate/          liveness, quota, admit, Admitted           ← pure, clock as argument
   ha/            the only module that speaks to Home Assistant
-  http/          axum router, extractors, responses
+  http/          axum router, handlers, embedded frontend
   tunnel/        step (pure) + interpreter (shell)
-  tex/           one-shot LaTeX emitter, unreachable from the service path
+  tex/           LaTeX emitter, unreachable from the service path
+frontend/        Vite + React, embedded by rust-embed at build time
 docs/            design, threat model, decisions
 ```
 
