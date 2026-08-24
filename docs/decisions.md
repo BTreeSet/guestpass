@@ -65,7 +65,7 @@ tags.
 * Steady-state cost is zero. Cost is incurred per incident, as one print.
 * A printed card's meaning is a function of the config file, so control ids and
   pass ids are a published interface. Renaming one breaks cards.
-* QR images cover head tokens only, so the output folder matches the wall.
+* Printed cards cover head tokens only, so a page matches the wall.
 * Deleting a `tokens` entry revokes immediately, with no window.
 * URLs stay stable: no signatures, no nonces, no embedded expiry.
 
@@ -79,8 +79,9 @@ someone watching a dashboard would go unwatched.
 
 **Decision.** The config file is the management interface. `explain` prints every
 URL, call, and quota to the log on each reload. Tunnel faults raise
-`persistent_notification.create` inside Home Assistant. QR images are written by
-a separate one-shot command.
+`persistent_notification.create` inside Home Assistant. Printable cards are a
+LaTeX document emitted by a one-shot subcommand, or printed to the log for
+installs without a shell.
 
 **Consequences.**
 
@@ -198,10 +199,35 @@ SHA-256 digest in a `HashMap`.
 
 **Consequences.**
 
-* A full URL is about 55 characters, a version-3 QR, scannable off a small card.
+* A full URL is about 55 characters, which stays a small QR at error-correction
+  level H, scannable off a card.
 * Guessing costs 2¹²⁷ expected requests against a rate-limited endpoint, so
   discovery is the vector that matters.
 * Lookup is O(1) and timing-independent: an attacker cannot steer a digest, so
   there is no comparison to make constant-time.
 * Fast hashing is correct for a uniformly random 128-bit secret; key-stretching
   work factors address low-entropy secrets.
+
+---
+
+## D-10 — Printing is a LaTeX document
+
+**Premise.** The owner has a printer and either a TeX installation or a browser.
+Add-on installs offer no shell, so any command must be reachable from the Home
+Assistant UI or from a copy of the config on the owner's own machine.
+
+**Decision.** `guestpass tex` writes a complete LaTeX document to stdout, and the
+add-on option `emit_tex: true` prints the same document to the log. Rendering
+happens in the owner's toolchain.
+
+**Consequences.**
+
+* No QR encoder, image codec, font, or PDF writer enters the binary.
+* `tex` is a pure function of the config, so the standalone binary run against a
+  copy of `guestpass.yaml` produces the same bytes as the add-on.
+* The service needs no writable path, and the output reaches the owner through
+  the log they already read.
+* The card layout is a text file the owner can edit.
+* The document depends on `qrcode` (LPPL 1.3), which draws with the TeX `\rule`
+  primitive and needs no shell-escape, external program, or graphics package. It
+  has been at v1.51 since 2015 and implements ISO 18004:2006, which is frozen.

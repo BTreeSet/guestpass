@@ -85,6 +85,7 @@ When a change matches a row, name the row, cite the decision, and stop.
 | C-16 | One config file, no includes and no interpolation layers | D-5 |
 | C-17 | The guest listener serves the six calls and the page | D-6 |
 | C-18 | Token entropy is 128 bits | P4, D-9 |
+| C-19 | No QR encoder, image codec, font, or PDF writer in the binary | D-10 |
 
 **These constrain agents acting on their own judgment. They do not constrain the
 owner.** When the owner asks for something in this table, name the row and the
@@ -110,7 +111,8 @@ non-trivial merge. Create them alongside the crate.
 * **G1 — dependency allowlist.** `cargo-deny` with an explicit `[bans]` list.
   Denied by name at minimum: `sqlx`, `rusqlite`, `diesel`, `redis`, `sled`,
   `jsonwebtoken`, `argon2`, `bcrypt`, `pbkdf2`, `tower-sessions`, `tower-cookies`,
-  `rustls-acme`, `openssl`, `mlua`, `rhai`, `tera`, `handlebars`.
+  `rustls-acme`, `openssl`, `mlua`, `rhai`, `tera`, `handlebars`, `qrcode`,
+  `qrcodegen`, `image`, `printpdf`, `resvg`, `usvg`.
 * **G2 — vocabulary lock.** A test asserting `Verb::COUNT == 2`,
   `Controllable::COUNT == 3`, and that `service_of` over the full cartesian
   product equals a hardcoded six-element literal. Its failure message cites I-1.
@@ -148,7 +150,7 @@ src/
   ha/            the only module that speaks to Home Assistant
   http/          axum router, extractors, responses
   tunnel/        step (pure) + interpreter (shell)
-  qr/            one-shot, unreachable from the service path
+  tex/           one-shot LaTeX emitter, unreachable from the service path
 docs/            design, threat model, decisions
 ```
 

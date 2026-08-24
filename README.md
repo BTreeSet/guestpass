@@ -160,14 +160,30 @@ To swap physical tags without a gap, keep the previous token for a window:
         accepted_until: 2026-09-07T00:00:00Z
 ```
 
-QR images cover the head token, so the output folder matches what belongs on the
-wall:
+## Printing cards
+
+guestpass emits a LaTeX document and stops there. Compile it with `pdflatex`, or
+paste it into Overleaf, and print the resulting page.
 
 ```
-guestpass qr --config guestpass.yaml --out ./qr
+guestpass tex --config guestpass.yaml > pass.tex
+pdflatex pass.tex
 ```
 
-This is a one-shot command. The running service needs no writable path.
+The document needs only the `qrcode` package, which draws QR codes with the TeX
+`\rule` primitive: no shell-escape, no external program, and no graphics package.
+It compiles unchanged under pdflatex, xelatex, lualatex, and Overleaf.
+
+Cards cover head tokens, so the page matches what belongs on the wall.
+
+Add-on installs have no shell. Set `emit_tex: true` in the add-on options and the
+document is printed to the **Log** tab on startup, ready to copy into Overleaf or
+a local file. `guestpass tex` is a pure function of the config, so running the
+standalone binary from Releases against a copy of `guestpass.yaml` on your own
+machine produces the same bytes.
+
+[`template/pass.tex`](template/pass.tex) is the same document with two example
+cards, for editing by hand.
 
 ## Documentation
 

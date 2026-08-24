@@ -422,7 +422,7 @@ gate/     liveness, quota, admit, Admitted           ← pure, clock as argument
 ha/       the only module that speaks to Home Assistant
 http/     axum router, extractors, responses
 tunnel/   step (pure) + interpreter (shell)
-qr/       one-shot, unreachable from the service path
+tex/      one-shot LaTeX emitter, unreachable from the service path
 ```
 
 Dependencies point downward. `policy` depends on `domain` alone. `http` and `ha`
