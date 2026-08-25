@@ -501,13 +501,23 @@ mod tests {
 
     use super::*;
 
-    /// The page must load its bundle from any depth of the call tree, so every
-    /// asset URL is absolute under the pass path and no relative form remains.
+    /// The page must load its bundle from any depth of the call tree, so the
+    /// rewrite is total: every relative asset URL in the embedded source
+    /// becomes absolute under the pass path, and none survives. Counting
+    /// against the source keeps the law true for the real bundle and for the
+    /// placeholder page a GUESTPASS_SKIP_FRONTEND_BUILD build embeds, which
+    /// has no asset tags at all.
     #[test]
     fn the_page_roots_its_assets_at_the_pass_path() {
+        let raw = Assets::get("index.html").expect("embedded page");
+        let relative = String::from_utf8_lossy(&raw.data)
+            .matches("\"./assets/")
+            .count();
         let html = page("K7QF3M2X9WPLNA4RTVBC6DHJ8Z").expect("embedded page");
-        assert!(
-            html.contains("\"/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/assets/"),
+        assert_eq!(
+            html.matches("\"/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/assets/")
+                .count(),
+            relative,
             "{html}"
         );
         assert!(!html.contains("\"./assets/"), "{html}");
