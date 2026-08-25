@@ -17,8 +17,14 @@ pub trait Vocabulary: Copy + Sized + PartialEq + 'static {
 
     fn token(self) -> &'static str;
 
+    /// Case-insensitive: the request side may arrive uppercased from a QR
+    /// card (docs/decisions.md D-12). The fold fuses into the comparison, so
+    /// matching against the canonical table allocates nothing.
     fn parse(s: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|v| v.token() == s)
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|v| v.token().eq_ignore_ascii_case(s))
     }
 }
 
@@ -186,37 +192,54 @@ pub struct PassIx(pub u16);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DeviceIx(pub u16);
 
-/// Minimum accepted token entropy, in base32 characters. 26 characters carry
-/// 130 bits, which is the smallest encoding of a 128-bit secret.
+/// Minimum accepted token length. Tokens are compared after ASCII case
+/// folding, so the alphabet holds 36 symbols and 26 characters carry
+/// 26 x log2(36), about 134 bits, above the 128-bit floor of D-9. `gen-token`
+/// output is base32, whose 26 characters encode exactly 130 bits.
 pub const MIN_TOKEN_CHARS: usize = 26;
 
-/// A pass token, held only long enough to be digested.
+/// Maximum accepted token length. The request side hashes any segment that
+/// parses, so this bound is what keeps an adversarial path segment from
+/// buying unbounded hashing work.
+pub const MAX_TOKEN_CHARS: usize = 64;
+
+/// A pass token in canonical form: ASCII lowercase alphanumeric, held only
+/// long enough to be digested.
 ///
-/// There is no `Debug`, `Display`, or `Serialize` impl that reveals the value,
-/// so no code path can format one into a log line.
+/// `parse` folds case, so the config side and the request side cannot disagree
+/// about it; two spellings differing only in case are one value. There is no
+/// `Debug`, `Display`, or `Serialize` impl that reveals the value, so no code
+/// path can format one into a log line. There is deliberately no `PartialEq`:
+/// canonical form would make a non-constant-time `==` on a secret look
+/// correct, and comparison belongs to digests (D-9).
 #[derive(Clone)]
-pub struct PassToken(String);
+pub struct PassToken(Box<str>);
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("token must be at least {MIN_TOKEN_CHARS} characters of [A-Za-z0-9]")]
+#[error("token must be {MIN_TOKEN_CHARS}-{MAX_TOKEN_CHARS} characters of [A-Za-z0-9]")]
 pub struct TokenError;
 
 impl PassToken {
+    /// The one constructor, and the one place case is folded.
+    ///
     /// # Errors
-    /// Returns [`TokenError`] for a token below the entropy floor or containing
-    /// characters outside the alphabet.
+    /// Returns [`TokenError`] for a token outside the length bounds or the
+    /// alphabet.
     pub fn parse(raw: &str) -> Result<Self, TokenError> {
-        let ok = raw.len() >= MIN_TOKEN_CHARS && raw.bytes().all(|b| b.is_ascii_alphanumeric());
+        let ok = (MIN_TOKEN_CHARS..=MAX_TOKEN_CHARS).contains(&raw.len())
+            && raw.bytes().all(|b| b.is_ascii_alphanumeric());
         if ok {
-            Ok(Self(raw.to_owned()))
+            Ok(Self(raw.to_ascii_lowercase().into_boxed_str()))
         } else {
             Err(TokenError)
         }
     }
 
+    /// SHA-256 of the canonical form: the only comparable representation a
+    /// token ever has. Parse it, digest it, drop it.
     #[must_use]
     pub fn digest(&self) -> TokenDigest {
-        TokenDigest::of(&self.0)
+        TokenDigest(Sha256::digest(self.0.as_bytes()).into())
     }
 }
 
@@ -226,19 +249,66 @@ impl fmt::Debug for PassToken {
     }
 }
 
-/// SHA-256 of a pass token: the only form retained after config load.
+/// SHA-256 of a canonical pass token: the only form the process retains after
+/// config load, and the only comparable one.
 ///
-/// Lookup keyed by digest is timing-independent without a constant-time
-/// comparison, because an attacker cannot steer a digest (docs/decisions.md D-9).
+/// The primitive choice is deliberate and narrow. An unkeyed fast hash is
+/// correct because the preimage is a uniformly random 128-bit secret;
+/// key-stretching KDFs compensate for low-entropy passwords and would buy
+/// nothing here but startup latency. The map key is the full 256-bit digest,
+/// so producing a colliding key is a birthday search over 2^128 SHA-256
+/// evaluations, and the `HashMap`'s per-process SipHash key keeps bucket
+/// placement unsteerable. No constant-time comparison exists because no
+/// comparison touches a secret (docs/decisions.md D-9).
+///
+/// [`PassToken::digest`] is the only constructor, which is what makes "both
+/// sides folded the same way" a property of the type rather than a rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TokenDigest([u8; 32]);
 
-impl TokenDigest {
+/// The scheme and authority every printed URL starts with: `http(s)://host[:port]`.
+///
+/// RFC 3986 makes the scheme (section 3.1) and host (3.2.2) case-insensitive
+/// and the path (3.3) case-sensitive. An `Origin` has no path, so uppercasing
+/// a URL rooted in one is meaning-preserving, which is what lets the card
+/// emitter use QR alphanumeric mode (D-12). `parse` is the proof: anything
+/// carrying a path, query, fragment, or userinfo is rejected, and the
+/// survivor is folded to lowercase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Origin(Box<str>);
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("must be http(s)://host[:port] with no path, query, or fragment")]
+pub struct OriginError;
+
+impl Origin {
+    /// # Errors
+    /// Returns [`OriginError`] for a missing scheme, an empty authority, or
+    /// anything beyond `host[:port]`.
+    pub fn parse(raw: &str) -> Result<Self, OriginError> {
+        // Scheme and host are case-insensitive and nothing case-sensitive can
+        // survive the charset below, so folding the whole string is sound.
+        let folded = raw.to_ascii_lowercase();
+        let rest = folded
+            .strip_prefix("https://")
+            .or_else(|| folded.strip_prefix("http://"))
+            .ok_or(OriginError)?;
+        let authority = rest.strip_suffix('/').unwrap_or(rest);
+        let ok = !authority.is_empty()
+            && authority
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':'));
+        if ok {
+            let scheme = &folded[..folded.len() - rest.len()];
+            Ok(Self(format!("{scheme}{authority}").into_boxed_str()))
+        } else {
+            Err(OriginError)
+        }
+    }
+
     #[must_use]
-    pub fn of(raw: &str) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(raw.as_bytes());
-        Self(hasher.finalize().into())
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -343,8 +413,47 @@ mod tests {
 
     #[test]
     fn digest_is_stable_and_distinguishing() {
-        let a = TokenDigest::of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z");
-        assert_eq!(a, TokenDigest::of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z"));
-        assert_ne!(a, TokenDigest::of("K7QF3M2X9WPLNA4RTVBC6DHJ8A"));
+        let d = |raw: &str| PassToken::parse(raw).expect("token").digest();
+        let a = d("K7QF3M2X9WPLNA4RTVBC6DHJ8Z");
+        assert_eq!(a, d("K7QF3M2X9WPLNA4RTVBC6DHJ8Z"));
+        assert_ne!(a, d("K7QF3M2X9WPLNA4RTVBC6DHJ8A"));
+    }
+
+    /// The fold lives in the constructor, so case-insensitivity is a theorem
+    /// about digests rather than a rule each lookup site must remember.
+    #[test]
+    fn case_folds_to_one_token() {
+        let d = |raw: &str| PassToken::parse(raw).expect("token").digest();
+        assert_eq!(
+            d("K7QF3M2X9WPLNA4RTVBC6DHJ8Z"),
+            d("k7qf3m2x9wplna4rtvbc6dhj8z")
+        );
+        assert_eq!(
+            d("K7qf3M2x9WplNa4RtvBc6DhJ8z"),
+            d("k7qf3m2x9wplna4rtvbc6dhj8z")
+        );
+    }
+
+    #[test]
+    fn over_long_tokens_are_rejected() {
+        assert_eq!(PassToken::parse(&"a".repeat(65)).unwrap_err(), TokenError);
+        assert!(PassToken::parse(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn an_origin_is_pathless_and_folded() {
+        let o = Origin::parse("HTTPS://GP.Example.com/").expect("origin");
+        assert_eq!(o.as_str(), "https://gp.example.com");
+        assert!(Origin::parse("https://gp.example.com:8443").is_ok());
+        for bad in [
+            "https://gp.example.com/gp",
+            "https://gp.example.com?x=1",
+            "https://gp.example.com#f",
+            "https://user@gp.example.com",
+            "https://",
+            "gp.example.com",
+        ] {
+            assert_eq!(Origin::parse(bad).unwrap_err(), OriginError, "{bad}");
+        }
     }
 }

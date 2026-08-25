@@ -32,7 +32,7 @@ devices:
 passes:
   - id: guest
     label: "Guest pass"
-    tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
+    tokens: ["k7qf3m2x9wplna4rtvbc6dhj8z"]
     devices: [lamp]
     quota: { per_minute: 6 }
 ```

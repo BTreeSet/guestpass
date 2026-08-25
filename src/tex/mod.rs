@@ -38,6 +38,14 @@ const PREAMBLE: &str = r"\documentclass[a4paper,11pt]{article}
 \noindent
 ";
 
+/// The URL a card encodes, uppercased whole so the QR encoder stays in
+/// alphanumeric mode (D-12, gate G12). Total by construction: `Origin` admits
+/// no path, tokens and device ids are ASCII alphanumeric or hyphen, and verbs
+/// are `on`/`off`, so uppercasing cannot change which resource the URL names.
+fn card_url(base: &str, token: &str, suffix: &str) -> String {
+    format!("{base}/t/{token}{suffix}").to_ascii_uppercase()
+}
+
 /// Render the document. Pure: the same config produces the same bytes anywhere,
 /// which is why the standalone binary and the add-on agree.
 #[must_use]
@@ -52,7 +60,7 @@ pub fn document(registry: &Registry, tokens: &[(String, String)]) -> String {
         };
         for (suffix, device, verb) in reachable(registry, pass) {
             let hint = format!("Scan to switch {}", verb.to_hint());
-            let url = format!("{base}/t/{token}{suffix}");
+            let url = card_url(base, token, &suffix);
             if cards > 0 && cards.is_multiple_of(2) {
                 out.push_str("\n\n\\vspace{6mm}\n\n\\noindent\n");
             } else if cards > 0 {
@@ -135,12 +143,45 @@ passes: [{ id: tag, tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"], device: lamp, verb: 
         );
         assert!(doc.contains(r"\begin{document}"));
         assert!(doc.contains(r"\end{document}"));
-        assert!(doc.contains("https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z"));
+        assert!(doc.contains("HTTPS://GP.EXAMPLE.COM/T/K7QF3M2X9WPLNA4RTVBC6DHJ8Z"));
         // An arity-0 pass reaches exactly one call, so exactly one card is
         // emitted after the preamble's macro definition.
         let body = doc.split(r"\begin{document}").nth(1).expect("body");
         assert_eq!(body.matches(r"\passcard{").count(), 1);
         assert!(body.contains(r"{Living room lamp}"), "{body}");
         assert!(body.contains("{Scan to switch on}"), "{body}");
+    }
+
+    /// Gate G12: every card URL stays inside the QR alphanumeric set, so the
+    /// encoder never falls back to byte mode and the printed modules stay
+    /// large. Exercised over every arity, mixed-case config included.
+    #[test]
+    fn urls_stay_qr_alphanumeric() {
+        const QR_ALPHANUMERIC: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+        let raw: crate::config::RawConfig = serde_yaml_ng::from_str(
+            r#"
+version: 1
+tunnel: {token: "eyJhIjoidGVzdCJ9", public_url: "https://gp.example.com:8443"}
+devices: [{ id: living-room-lamp, label: Lamp, entity: light.a }]
+passes:
+  - { id: guest, tokens: ["K7qf3M2x9WplNa4RtvBc6DhJ8z"], devices: [living-room-lamp] }
+  - { id: door, tokens: ["p2lx8kj4nrq7wm3vbz9cdt6hfa"], device: living-room-lamp }
+  - { id: tag, tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFB"], device: living-room-lamp, verb: "on" }
+"#,
+        )
+        .expect("yaml");
+        let reg = crate::config::compile(&raw).expect("compiles");
+        for pass in reg.passes() {
+            for (suffix, _, _) in reachable(&reg, pass) {
+                let url = card_url(reg.base_url(), "K7QF3M2X9WPLNA4RTVBC6DHJ8Z", &suffix);
+                for b in url.bytes() {
+                    assert!(
+                        QR_ALPHANUMERIC.contains(&b),
+                        "{url:?} contains {:?}, outside QR alphanumeric mode",
+                        char::from(b)
+                    );
+                }
+            }
+        }
     }
 }

@@ -17,7 +17,7 @@ use axum::{Json, Router};
 use rust_embed::RustEmbed;
 use time::OffsetDateTime;
 
-use crate::domain::{DeviceIx, TokenDigest, Verb, Vocabulary};
+use crate::domain::{DeviceIx, PassToken, Verb, Vocabulary};
 use crate::gate::{Bucket, LivenessDenial, admit};
 use crate::ha::{HaLink, Reading, Readings};
 use crate::policy::{CompiledPass, Device, PartialCall, Registry, ShapeDenial, Trigger, walk};
@@ -114,10 +114,19 @@ fn bind_socket_at(path: &std::path::Path) -> Result<tokio::net::UnixListener, So
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
+    // `/t/` and its uppercase twin. The literal is one ASCII letter, so its
+    // case-variant set has cardinality 2: enumerating both routes is complete,
+    // not a heuristic. QR cards print the uppercase form (D-12), and matchit's
+    // radix trie makes the second route free at request time.
     Router::new()
         .route("/t/{token}", get(entry).post(entry).head(probe))
         .route(
             "/t/{token}/{*rest}",
+            get(entry_rest).post(entry_rest).head(probe),
+        )
+        .route("/T/{token}", get(entry).post(entry).head(probe))
+        .route(
+            "/T/{token}/{*rest}",
             get(entry_rest).post(entry_rest).head(probe),
         )
         .fallback(nothing_here)
@@ -190,8 +199,13 @@ async fn handle(
     let registry = state.registry.load_full();
 
     // Resolve the token first, so assets are reachable only behind a valid pass
-    // and an invalid token learns nothing from any path.
-    let Some(binding) = registry.binding(&TokenDigest::of(token)) else {
+    // and an invalid token learns nothing from any path. Parsing before hashing
+    // bounds the hash input and folds case at the one constructor, so this
+    // lookup and the config side cannot disagree about spelling.
+    let Ok(token) = PassToken::parse(token) else {
+        return nothing_here().await;
+    };
+    let Some(binding) = registry.binding(&token.digest()) else {
         return nothing_here().await;
     };
 

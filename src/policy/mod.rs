@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use time::OffsetDateTime;
 
 use crate::domain::{
-    DeviceId, DeviceIx, EntityId, PassIx, TokenDigest, Verb, Vocabulary, service_of,
+    DeviceId, DeviceIx, EntityId, Origin, PassIx, TokenDigest, Verb, Vocabulary, service_of,
 };
 
 /// A call guestpass is permitted to make.
@@ -114,7 +114,7 @@ pub struct Registry {
     passes: Box<[CompiledPass]>,
     devices: Box<[Device]>,
     pinned: Box<[EntityId]>,
-    base_url: Box<str>,
+    origin: Origin,
 }
 
 impl Registry {
@@ -123,7 +123,7 @@ impl Registry {
         by_digest: HashMap<TokenDigest, TokenBinding>,
         passes: Box<[CompiledPass]>,
         devices: Box<[Device]>,
-        base_url: Box<str>,
+        origin: Origin,
     ) -> Self {
         let mut pinned: Vec<EntityId> = devices.iter().map(|d| d.entity.clone()).collect();
         pinned.sort_unstable_by_key(ToString::to_string);
@@ -133,7 +133,7 @@ impl Registry {
             passes,
             devices,
             pinned: pinned.into_boxed_slice(),
-            base_url,
+            origin,
         }
     }
 
@@ -170,7 +170,7 @@ impl Registry {
 
     #[must_use]
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.origin.as_str()
     }
 }
 
@@ -241,7 +241,9 @@ pub fn apply<'r>(
         PartialCall::Pass { pass, devices } => devices
             .iter()
             .map(|ix| registry.device(*ix))
-            .find(|d| d.id.as_str() == segment)
+            // Case-insensitive against the canonical lowercase id (D-12): the
+            // fold fuses into the comparison, so the scan stays allocation-free.
+            .find(|d| d.id.as_str().eq_ignore_ascii_case(segment))
             .map(|device| PartialCall::Device { pass, device })
             .ok_or(ShapeDenial::NoSuchDevice),
 
@@ -337,7 +339,7 @@ mod tests {
             HashMap::new(),
             vec![pass].into_boxed_slice(),
             devices.into_boxed_slice(),
-            "https://gp.example.com".into(),
+            Origin::parse("https://gp.example.com").expect("origin"),
         )
     }
 
@@ -370,6 +372,22 @@ mod tests {
         assert!(matches!(
             walk(&reg, pass, ["lamp"]).expect("valid"),
             PartialCall::Device { .. }
+        ));
+    }
+
+    /// A QR card prints the whole URL uppercased (D-12), so the fold walks
+    /// the same tree the lowercase spelling does.
+    #[test]
+    fn uppercase_segments_walk_the_same_tree() {
+        let reg = arity2();
+        let pass = reg.pass(PassIx(0));
+        assert!(matches!(
+            walk(&reg, pass, ["LAMP", "ON"]).expect("call"),
+            PartialCall::Call { .. }
+        ));
+        assert!(matches!(
+            walk(&reg, pass, ["Lamp", "oFf"]).expect("call"),
+            PartialCall::Call { .. }
         ));
     }
 

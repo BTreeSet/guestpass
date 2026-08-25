@@ -206,7 +206,7 @@ jittered backoff capped at 900 s, reset after 60 s of `Ready`.
 free; QR density is not.
 
 **Decision.** 128 bits, base32 unpadded, 26 characters. Storage and lookup are by
-SHA-256 digest in a `HashMap`.
+SHA-256 digest of the case-folded token in a `HashMap`.
 
 **Consequences.**
 
@@ -214,10 +214,19 @@ SHA-256 digest in a `HashMap`.
   level H, scannable off a card.
 * Guessing costs 2¹²⁷ expected requests against a rate-limited endpoint, so
   discovery is the vector that matters.
-* Lookup is O(1) and timing-independent: an attacker cannot steer a digest, so
-  there is no comparison to make constant-time.
-* Fast hashing is correct for a uniformly random 128-bit secret; key-stretching
-  work factors address low-entropy secrets.
+* After `compile` returns, the process holds digests only: there is no
+  plaintext token for a log line, a `Debug` impl, or a future endpoint to
+  leak. The config file and Cloudflare's edge logs still hold plaintext, so
+  the digest closes exactly one channel: process memory.
+* No comparison ever touches a secret. `PassToken` has no `PartialEq`; it is
+  parsed, digested, dropped. The map is keyed by the full 256-bit digest, and
+  its per-process SipHash key keeps bucket placement unsteerable. This is also
+  why the map stays a `HashMap` at n ≈ 10, where a linear scan usually wins:
+  the scan would need a constant-time comparison on every entry to close the
+  early-exit timing signal, which is more machinery than the map.
+* An unkeyed fast hash is correct because the preimage is a uniformly random
+  128-bit secret; key-stretching KDFs compensate for low-entropy passwords and
+  would buy startup latency and nothing else.
 
 ---
 
@@ -267,3 +276,36 @@ digests into one manifest list, which is what `image:` names.
   published.
 * Each architecture carries its own provenance and SBOM attestation, produced by
   the build that pushed it.
+
+---
+
+## D-12 — Case-insensitive tokens, uppercase QR encoding
+
+**Premise.** QR alphanumeric mode covers `0-9 A-Z $ % * + - . / :` and space at
+5.5 bits per character; byte mode costs 8. At a fixed card width fewer modules
+print larger, and module size is what makes a hallway scan work.
+
+**Decision.** Tokens are case-insensitive. `PassToken::parse` folds to ASCII
+lowercase and is the type's only constructor, and `PassToken::digest` is
+`TokenDigest`'s only constructor, so the config side and the request side
+cannot disagree about spelling. Cards encode the whole URL uppercased.
+`tunnel.public_url` is parsed to a pathless `Origin`.
+
+**Consequences.**
+
+* Measured at error-correction level H: a 51-character pass URL drops from
+  version 6 (41×41 modules) to version 5 (37×37); a 78-character device/verb
+  URL drops from version 8 (49×49) to version 6 (41×41). Modules print 11% and
+  20% larger at the same card width.
+* RFC 3986 makes scheme and host case-insensitive and paths case-sensitive, so
+  uppercasing is meaning-preserving exactly when the URL has no owner-supplied
+  path. `Origin` rejects one at compile, which is what makes the emitter total.
+* The folded alphabet holds 36 symbols, so 26 characters carry about 134 bits
+  and the 128-bit floor of D-9 stands.
+* Device ids and verbs match path segments case-insensitively, folded at the
+  comparison, allocation-free. The `/t/` literal's case-variant set has
+  cardinality 2 and both are routes.
+* Embedded asset paths keep exact case: Vite content hashes are mixed-case,
+  which is why normalization happens where the closed vocabulary is consulted
+  and never on the raw path.
+* Gate G12 asserts every emitted card URL stays inside the QR alphanumeric set.

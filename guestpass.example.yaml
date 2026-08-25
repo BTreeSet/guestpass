@@ -19,13 +19,13 @@ passes:
   # Arity 2: https://HOST/t/<token>/lamp/on
   - id: guest
     label: "Guest pass"
-    tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
+    tokens: ["k7qf3m2x9wplna4rtvbc6dhj8z"]
     devices: [lamp]
     quota: {per_minute: 6}
 
   # Arity 0: https://HOST/t/<token> fires on GET, for an NFC tag.
   - id: door-tag
-    tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"]
+    tokens: ["p2lx8kj4nrq7wm3vbz9cdt6hfa"]
     device: lamp
     verb: "on"
     trigger: direct

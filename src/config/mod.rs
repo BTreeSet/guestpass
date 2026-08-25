@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use crate::domain::{DeviceId, DeviceIx, EntityId, PassIx, PassToken, TokenDigest, Verb};
+use crate::domain::{DeviceId, DeviceIx, EntityId, Origin, PassIx, PassToken, TokenDigest, Verb};
 use crate::policy::{
     CompiledPass, Device, Quota, Registry, Scope, TokenBinding, Trigger, Window, authorize,
 };
@@ -235,12 +235,23 @@ pub fn compile(raw: &RawConfig) -> Result<Registry, CompileErrors> {
         });
     }
 
-    if errors.is_empty() {
+    // --- origin -----------------------------------------------------------
+    // Parsed to a pathless origin so that uppercasing an emitted card URL for
+    // QR alphanumeric mode cannot change which resource it names (D-12).
+    let origin = match Origin::parse(&raw.tunnel.public_url) {
+        Ok(origin) => Some(origin),
+        Err(e) => {
+            errors.push(format!("tunnel.public_url: {e}"));
+            None
+        }
+    };
+
+    if let Some(origin) = origin.filter(|_| errors.is_empty()) {
         Ok(Registry::new(
             by_digest,
             passes.into_boxed_slice(),
             devices.into_boxed_slice(),
-            raw.tunnel.public_url.trim_end_matches('/').into(),
+            origin,
         ))
     } else {
         let mut out = String::new();
@@ -330,6 +341,11 @@ tunnel:
   public_url: "https://gp.example.com"
 "#;
 
+    /// Through the one constructor, as every caller must go.
+    fn digest_of(raw: &str) -> TokenDigest {
+        PassToken::parse(raw).expect("token").digest()
+    }
+
     fn parse(yaml: &str) -> RawConfig {
         let text = if yaml.contains("tunnel:") {
             yaml.to_owned()
@@ -377,9 +393,12 @@ tunnel:
     #[test]
     fn a_token_resolves_to_its_pass() {
         let reg = compile(&parse(GOOD)).expect("compiles");
-        let digest = TokenDigest::of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z");
+        let digest = digest_of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z");
         assert_eq!(reg.binding(&digest).expect("bound").pass, PassIx(0));
-        assert!(reg.binding(&TokenDigest::of("nope")).is_none());
+        assert!(
+            reg.binding(&digest_of("aaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .is_none()
+        );
     }
 
     #[test]
@@ -437,6 +456,32 @@ passes:
         assert!(err.0.contains("head token"), "{}", err.0);
     }
 
+    /// The config side and the request side meet at the digest, so an
+    /// uppercase spelling in the file and a lowercase one in the URL are one
+    /// credential (D-12).
+    #[test]
+    fn a_token_is_case_insensitive_across_the_config_boundary() {
+        let reg = compile(&parse(GOOD)).expect("compiles");
+        assert!(
+            reg.binding(&digest_of("k7qf3m2x9wplna4rtvbc6dhj8z"))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_public_url_with_a_path_is_rejected() {
+        let yaml = r#"
+version: 1
+tunnel:
+  token: "eyJhIjoidGVzdCJ9"
+  public_url: "https://gp.example.com/gp"
+devices: [{ id: lamp, label: Lamp, entity: light.a }]
+passes: [{ id: p, tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"], device: lamp, verb: "on" }]
+"#;
+        let err = compile(&parse(yaml)).expect_err("rejects");
+        assert!(err.0.contains("public_url"), "{}", err.0);
+    }
+
     #[test]
     fn a_retiring_token_is_accepted_alongside_the_head() {
         let yaml = r#"
@@ -452,13 +497,13 @@ passes:
 "#;
         let reg = compile(&parse(yaml)).expect("compiles");
         assert!(
-            reg.binding(&TokenDigest::of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z"))
+            reg.binding(&digest_of("K7QF3M2X9WPLNA4RTVBC6DHJ8Z"))
                 .expect("head")
                 .accepted_until
                 .is_none()
         );
         assert!(
-            reg.binding(&TokenDigest::of("P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"))
+            reg.binding(&digest_of("P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"))
                 .expect("retiring")
                 .accepted_until
                 .is_some()

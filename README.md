@@ -32,9 +32,9 @@ interface.
 A pass is a high-entropy path segment. Later segments apply arguments.
 
 ```
-https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z          control page
-https://gp.example.com/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/lamp/on  device and verb
-https://gp.example.com/t/P2LX8KJ4NRQ7WM3VBZ9CDT6HFA          one fixed call
+https://gp.example.com/t/k7qf3m2x9wplna4rtvbc6dhj8z          control page
+https://gp.example.com/t/k7qf3m2x9wplna4rtvbc6dhj8z/lamp/on  device and verb
+https://gp.example.com/t/p2lx8kj4nrq7wm3vbz9cdt6hfa          one fixed call
 ```
 
 A pass that stops short of a full call renders a page listing what remains. A
@@ -90,12 +90,12 @@ devices:
 passes:
   - id: guest                       # arity 2 → https://HOST/t/<token>
     label: "Guest pass"
-    tokens: ["K7QF3M2X9WPLNA4RTVBC6DHJ8Z"]
+    tokens: ["k7qf3m2x9wplna4rtvbc6dhj8z"]
     devices: [lamp]
     quota: { per_minute: 6 }
 
   - id: door-tag                    # arity 0 → https://HOST/t/<token>
-    tokens: ["P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"]
+    tokens: ["p2lx8kj4nrq7wm3vbz9cdt6hfa"]
     device: lamp
     verb: "on"
     trigger: direct
@@ -103,7 +103,10 @@ passes:
 ```
 
 Tokens are inline, so this file is a secret: mode `0600`, same handling as
-`secrets.yaml`. `guestpass gen-token` prints a fresh one.
+`secrets.yaml`. `guestpass gen-token` prints a fresh one. Tokens and paths are
+case-insensitive; printed cards encode the URL in capitals, which QR encodes in
+alphanumeric mode so each module prints larger. `public_url` is scheme and host
+only.
 
 ### Tunnel
 
@@ -162,7 +165,7 @@ To swap physical tags without a gap, keep the previous token for a window:
 ```yaml
     tokens:
       - "N4WJ7KP2XQ8MRT3VBZ9CDL6HFA"
-      - value: "P2LX8KJ4NRQ7WM3VBZ9CDT6HFA"
+      - value: "p2lx8kj4nrq7wm3vbz9cdt6hfa"
         accepted_until: 2026-09-07T00:00:00Z
 ```
 

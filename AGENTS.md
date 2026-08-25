@@ -140,6 +140,10 @@ non-trivial merge. Create them alongside the crate.
   into opening one.
 * **G10 — workflow hygiene.** `actionlint`, `zizmor --persona=pedantic`,
   `yamllint`, and ShellCheck run over the workflows and `ci/gates.sh`.
+* **G12 — QR alphanumeric emission.** `tex::tests::urls_stay_qr_alphanumeric`
+  asserts every emitted card URL is drawn from the QR alphanumeric set, so a
+  card never falls back to byte mode. It holds by construction: `Origin`
+  admits no path, and tokens, device ids, and verbs are upper-safe.
 * **G11 — add-on publish parity.** `ci/gates.sh` asserts that the `arch:` list
   in `addon/config.yaml` equals the architecture set of the `deploy.yaml` build
   matrix, and that `image:` carries no `{arch}` placeholder. The Supervisor

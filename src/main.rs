@@ -88,8 +88,11 @@ fn resolve(flag: Option<PathBuf>, options: &Options) -> PathBuf {
 }
 
 fn gen_token() -> String {
+    // 128 bits from the thread CSPRNG, printed in the canonical case so the
+    // value can be pasted into the config unedited (tokens fold at parse; the
+    // card emitter uppercases for QR alphanumeric mode).
     let bytes: [u8; 16] = rand::rng().random();
-    base32::encode(base32::Alphabet::Rfc4648 { padding: false }, &bytes)
+    base32::encode(base32::Alphabet::Rfc4648Lower { padding: false }, &bytes)
 }
 
 fn load(path: &Path) -> Result<(Registry, RawConfig), String> {
