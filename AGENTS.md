@@ -182,9 +182,13 @@ on: `ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for aarch64. Each pushes by
 digest under no tag, and `manifest` joins the digests into the one list that
 `addon/config.yaml` names.
 
-Every `uses:` is pinned to a full commit SHA. Every job declares
-`timeout-minutes`. No `${{ }}` is interpolated into a `run:` block; values cross
-through `env:` and are referenced as quoted shell variables.
+Actions under the `actions/` namespace are maintained by GitHub and run on
+GitHub's own trust anyway, so they pin to the latest major tag and pick up
+security and performance fixes without a hash bump. Every third-party `uses:`
+is pinned to a full commit SHA, because a tag there is a mutable reference
+into someone else's repository. Every job declares `timeout-minutes`. No
+`${{ }}` is interpolated into a `run:` block; values cross through `env:` and
+are referenced as quoted shell variables.
 
 ## Repository shape
 
