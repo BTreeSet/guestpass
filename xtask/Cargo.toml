@@ -1,0 +1,17 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+description = "CI logic for guestpass: gates, the release tag algebra, publish steps."
+publish = false
+
+# Every dependency here already ships in the guestpass tree, so this crate adds
+# nothing to the audited dependency set (G1).
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "macros"] }

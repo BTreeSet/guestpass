@@ -1,3 +1,9 @@
+[workspace]
+members = ["xtask"]
+# Docker and plain `cargo build` produce the shipped binary only; the CI tool
+# is built when named (`cargo xtask ...`) or under `--workspace`.
+default-members = ["."]
+
 [package]
 name = "guestpass"
 version = "0.1.0"

@@ -1,0 +1,3 @@
+[alias]
+# The CI tool. `cargo xtask gates | resolve | manifest | verify`.
+xtask = "run --package xtask --locked --"

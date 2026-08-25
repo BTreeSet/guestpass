@@ -14,17 +14,21 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Cache dependency compilation against the manifests alone.
+# Cache dependency compilation against the manifests alone. The xtask member
+# is CI-only and never compiled here, but cargo needs its manifest and a target
+# file to resolve the workspace.
 COPY Cargo.toml Cargo.lock rust-toolchain.toml build.rs ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs \
+COPY xtask/Cargo.toml xtask/Cargo.toml
+RUN mkdir -p src xtask/src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs \
+    && echo "fn main() {}" > xtask/src/main.rs \
     && mkdir -p frontend/dist && echo "<!doctype html>" > frontend/dist/index.html \
-    && GUESTPASS_SKIP_FRONTEND_BUILD=1 cargo build --release --locked || true
+    && GUESTPASS_SKIP_FRONTEND_BUILD=1 cargo build --release --locked -p guestpass || true
 RUN rm -rf src
 
 COPY src ./src
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 ENV GUESTPASS_SKIP_FRONTEND_BUILD=1
-RUN cargo build --release --locked
+RUN cargo build --release --locked -p guestpass
 
 # ---- Stage 3: fetch cloudflared --------------------------------------------
 # Pinned by version and verified by checksum. Never downloaded at runtime:

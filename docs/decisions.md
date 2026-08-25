@@ -309,3 +309,39 @@ cannot disagree about spelling. Cards encode the whole URL uppercased.
   which is why normalization happens where the closed vocabulary is consulted
   and never on the raw path.
 * Gate G12 asserts every emitted card URL stays inside the QR alphanumeric set.
+
+---
+
+## D-13 — The release tag algebra
+
+**Premise.** The Supervisor installs `<image>:<version>` from
+`addon/config.yaml`. Pushes to main publish builds that are not releases, and
+an unnamed build cannot be referenced, compared, or rolled back to.
+
+**Decision.** Two tag shapes, disjoint by pattern, computed by the typed
+algebra in `xtask/src/release.rs` from the tag list, the clock, and the
+commit:
+
+* A release is exactly `vMAJOR.MINOR.PATCH`, and its image tags are
+  `MAJOR.MINOR.PATCH` and `latest`. The script refuses a tag that is not an
+  exact triple or that disagrees with the manifest version.
+* A pre-release takes the latest release, raises its patch by one, and appends
+  `-dev.<yyyy-mm-dd>.<hh-mm-ss>.g<sha7>`. Its image tags are that version and
+  the moving alias `edge`.
+
+**Consequences.**
+
+* SemVer orders every pre-release above the release it follows and below the
+  release it precedes, so the whole history sorts correctly by tag alone.
+* The timestamp is fixed-width, so lexical order is chronological order within
+  one patch interval; the deploy concurrency group serializes publishes, so
+  ties cannot occur. The sha makes every build referenceable.
+* `g` precedes the hash because a truncated hash is occasionally all digits,
+  and a leading zero would make it an invalid SemVer numeric identifier.
+* `resolve` is a pure function of the event, the manifest version, the
+  released versions, the clock, and the commit: strings stop at the parse
+  boundary (`Version`, `Stamp`, `Sha7` are refined types, and the triple
+  ordering is a derived `Ord`), so its tests pin every branch on fixed
+  inputs (G13).
+* `edge` is a projection of the latest pre-release, never a name the algebra
+  reasons about.

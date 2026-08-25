@@ -121,10 +121,10 @@ non-trivial merge. Create them alongside the crate.
 * **G4 — statelessness.** CI runs the built image with `--read-only` and
   `--network none`, and asserts the image ships `/run/guestpass` as a symlink to
   `/dev/shm/guestpass`.
-* **G5 — banned identifiers.** `ci/gates.sh`, with an inline
-  `// ALLOW-BANNED: <reason>` escape.
-* **G6 — pure core.** `ci/gates.sh` asserts `src/policy/` and `src/gate/`
-  contain no clock read and no I/O.
+* **G5 — banned identifiers.** `cargo xtask gates` (`xtask/src/gates.rs`),
+  with an inline `// ALLOW-BANNED: <reason>` escape.
+* **G6 — pure core.** `cargo xtask gates` asserts `src/policy/` and
+  `src/gate/` contain no clock read and no I/O.
 * **G7 — docs match code.** `config::tests::the_shipped_example_compiles`
   parses `guestpass.example.yaml` and asserts the URL list it denotes.
   `addon::tests::the_shipped_addon_manifest_matches_this_struct` parses
@@ -134,21 +134,27 @@ non-trivial merge. Create them alongside the crate.
   `#[allow]` in `tunnel::spawn` for `PR_SET_PDEATHSIG`, plus
   `cargo clippy --all-targets -- -D warnings`. (`forbid` cannot be locally
   overridden, so the gate is `deny` plus a single justified exception.)
-* **G9 — no network listener.** `ci/gates.sh` greps `src/` for `TcpListener`,
+* **G9 — no network listener.** `cargo xtask gates` scans `src/` for `TcpListener`,
   `SocketAddr`, and `0.0.0.0`. Proving the absence is stronger than checking a
   bind address: a program that cannot name a TCP listener cannot be configured
   into opening one.
-* **G10 — workflow hygiene.** `actionlint`, `zizmor --persona=pedantic`,
-  `yamllint`, and ShellCheck run over the workflows and `ci/gates.sh`.
+* **G10 — workflow hygiene.** `actionlint` (which ShellChecks the embedded
+  `run:` one-liners, the only shell in the repository), `zizmor
+  --persona=pedantic`, and `yamllint` run over the workflows.
 * **G12 — QR alphanumeric emission.** `tex::tests::urls_stay_qr_alphanumeric`
   asserts every emitted card URL is drawn from the QR alphanumeric set, so a
   card never falls back to byte mode. It holds by construction: `Origin`
   admits no path, and tokens, device ids, and verbs are upper-safe.
-* **G11 — add-on publish parity.** `ci/gates.sh` asserts that the `arch:` list
+* **G11 — add-on publish parity.** `cargo xtask gates` asserts that the `arch:` list
   in `addon/config.yaml` equals the architecture set of the `deploy.yaml` build
   matrix, and that `image:` carries no `{arch}` placeholder. The Supervisor
   installs `<image>:<version>`, so an architecture the manifest offers and the
   matrix never builds is an install that fails at pull time.
+* **G13 — release identity.** The typed algebra in `xtask/src/release.rs` is
+  the only producer of published versions and tags (D-13); `cargo xtask
+  resolve` is its shell. Its tests pin every branch on fixed inputs, and the
+  gate tests show each gate firing: a gate that cannot fail is decoration.
+  Both run under `cargo test --workspace` in CI and in `cargo xtask verify`.
 
 A gate that fires marks the change for reconsideration. Weakening a gate to pass
 requires the owner.

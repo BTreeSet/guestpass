@@ -37,13 +37,15 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # --workspace includes the xtask crate, whose tests are the CI harness:
+      # the release tag algebra on fixed inputs, and every gate shown firing.
       - name: Test
-        run: cargo test --locked
+        run: cargo test --workspace --locked
 
       - name: Gates G5, G6, G9, and G11
-        run: ./ci/gates.sh
+        run: cargo xtask gates
 
   # Gate G1: the dependency allowlist. Separated from `rust` because it fetches
   # the advisory database and fails for reasons unrelated to the code.
@@ -116,14 +118,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
 
-      # actionlint also ShellChecks embedded `run:` blocks and ci/gates.sh.
+      # actionlint also ShellChecks the embedded `run:` blocks, which are the
+      # only shell left in the repository.
       - name: actionlint
         run: |
           docker run --rm -v "$PWD:/repo" --workdir /repo \
             rhysd/actionlint:1.7.12 -color
-
-      - name: ShellCheck the gate script
-        run: docker run --rm -v "$PWD:/repo" --workdir /repo koalaman/shellcheck:v0.11.0 ci/gates.sh
 
       # zizmor audits the workflows themselves for privilege and injection flaws.
       - name: yamllint

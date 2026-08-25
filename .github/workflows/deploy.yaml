@@ -47,47 +47,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # The tag algebra computes the pre-release version from the latest
+          # shipped release, so it needs the full tag list.
+          fetch-tags: true
 
-      # The Supervisor installs `<image>:<version>`, and both come from
-      # addon/config.yaml. A release whose tag disagrees with that version
-      # publishes an add-on nobody can install, so the two are reconciled here
-      # and the job stops rather than shipping the mismatch.
+      # The version and tag set come from the typed algebra in
+      # `xtask/src/release.rs` (D-13, G13): a release is exactly the manifest
+      # version plus `latest`; a push to main is the successor patch of the
+      # latest release, named `MAJOR.MINOR.PATCH-dev.<date>.<time>.g<sha7>`,
+      # plus the moving `edge` alias. It refuses a release whose tag is not an
+      # exact triple or disagrees with addon/config.yaml, and reconciles the
+      # manifest image with the one this workflow publishes.
       #
       # The release tag is attacker-influenced only by someone who already holds
-      # write access, and it still crosses into the shell as data rather than as
-      # an interpolated splice.
+      # write access, and it crosses as environment data into a process that
+      # never involves a shell.
       - name: Resolve
         id: resolve
         env:
           EVENT: ${{ github.event_name }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          declared=$(sed -n 's/^image: *//p' addon/config.yaml | tr -d '"')
-          if [ "$declared" != "$image" ]; then
-            echo "::error ::addon/config.yaml names $declared; this workflow publishes $image"
-            exit 1
-          fi
-
-          declared_version=$(sed -n 's/^version: *//p' addon/config.yaml | tr -d '"')
-          if [ "$EVENT" = "release" ]; then
-            version="${TAG#v}"
-            if [ "$version" != "$declared_version" ]; then
-              echo "::error ::release $TAG is $version; the manifest says $declared_version"
-              exit 1
-            fi
-            tags="$version latest"
-          else
-            version="${GITHUB_SHA:0:7}"
-            tags="edge"
-          fi
-
-          {
-            printf 'image=%s\n' "$image"
-            printf 'tags=%s\n' "$tags"
-            printf 'version=%s\n' "$version"
-            printf 'created=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } >> "$GITHUB_OUTPUT"
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: cargo xtask resolve
 
   # One runner per architecture, each compiling for the machine it runs on.
   # Emulating aarch64 on an amd64 runner costs an order of magnitude on a Rust
@@ -96,7 +76,8 @@ jobs:
   #
   # The matrix is a literal rather than a value read from addon/config.yaml,
   # because a runner label is a fact about GitHub that the add-on manifest has
-  # no business naming. `ci/gates.sh` asserts the two architecture sets agree.
+  # no business naming. Gate G11 (`cargo xtask gates`) asserts the two
+  # architecture sets agree.
   build:
     name: Build ${{ matrix.arch }}
     needs: [meta]
@@ -177,10 +158,16 @@ jobs:
     name: Publish manifest list
     needs: [meta, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
+      contents: read
       packages: write
     steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -198,25 +185,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create manifest list
+      # Typed argument assembly, no shell word-splitting: the digests are
+      # validated as sha256 names and the docker invocation is exec'd direct.
+      - name: Create and inspect manifest list
         env:
           IMAGE: ${{ needs.meta.outputs.image }}
           TAGS: ${{ needs.meta.outputs.tags }}
-        run: |
-          read -ra tag_list <<< "$TAGS"
-          args=()
-          for tag in "${tag_list[@]}"; do
-            args+=(--tag "$IMAGE:$tag")
-          done
-          for digest in /tmp/digests/*; do
-            args+=("$IMAGE@sha256:$(basename "$digest")")
-          done
-          docker buildx imagetools create "${args[@]}"
-
-      - name: Inspect
-        env:
-          IMAGE: ${{ needs.meta.outputs.image }}
-          TAGS: ${{ needs.meta.outputs.tags }}
-        run: |
-          read -ra tag_list <<< "$TAGS"
-          docker buildx imagetools inspect "$IMAGE:${tag_list[0]}"
+        run: cargo xtask manifest --digests /tmp/digests
