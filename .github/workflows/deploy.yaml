@@ -17,6 +17,8 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
 
 permissions: {}
 

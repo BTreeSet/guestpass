@@ -31,15 +31,24 @@ ENV GUESTPASS_SKIP_FRONTEND_BUILD=1
 RUN cargo build --release --locked -p guestpass
 
 # ---- Stage 3: fetch cloudflared --------------------------------------------
-# Pinned by version and verified by checksum. Never downloaded at runtime:
-# that would make startup depend on the network and make the binary mutable.
+# Always the latest release, resolved at build time: an outdated connector is
+# a liability, and Cloudflare supports only recent versions. Never downloaded
+# at runtime: that would make startup depend on the network and the binary
+# mutable. The `releases/latest` redirect names the version; resolving it once
+# and downloading by that name keeps the recorded version and the fetched
+# binary consistent even if a release lands mid-build. The resolved version is
+# recorded in the image and logged at startup.
 FROM debian:bookworm-slim AS connector
 ARG TARGETARCH
-ARG CLOUDFLARED_VERSION=2026.7.1
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /cloudflared \
-      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${TARGETARCH}" \
+RUN latest=$(curl -fsSLo /dev/null -w '%{url_effective}' \
+      "https://github.com/cloudflare/cloudflared/releases/latest") \
+    && version="${latest##*/}" \
+    && case "$version" in [0-9][0-9][0-9][0-9].*) ;; *) echo "unexpected version: $version" >&2; exit 1 ;; esac \
+    && printf '%s\n' "$version" > /cloudflared.version \
+    && curl -fsSL -o /cloudflared \
+      "https://github.com/cloudflare/cloudflared/releases/download/${version}/cloudflared-linux-${TARGETARCH}" \
     && chmod +x /cloudflared
 
 # The runtime stage has no shell, so the socket directory is assembled here.
@@ -49,6 +58,7 @@ RUN mkdir -p /runtree && ln -s /dev/shm/guestpass /runtree/guestpass
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=backend /app/target/release/guestpass /usr/local/bin/guestpass
 COPY --from=connector /cloudflared /usr/local/bin/cloudflared
+COPY --from=connector /cloudflared.version /etc/cloudflared.version
 
 # No port is published and none is opened: guestpass listens on a UNIX socket at
 # /run/guestpass/guest.sock, which cloudflared reaches inside this container.

@@ -198,6 +198,12 @@ jittered backoff capped at 900 s, reset after 60 s of `Ready`.
 * The full self-healing behaviour is testable with a fake clock and no processes.
 * Docker's `init: true` supplies a `waitpid` reaper.
 
+* The packaged binary is the latest cloudflared release, resolved while the
+  image builds; the resolved version is recorded at `/etc/cloudflared.version`
+  and logged at startup. A weekly scheduled rebuild republishes `edge`, so the
+  connector cannot age silently between source changes. Version tags keep the
+  connector they shipped with: freshness there rides the release cadence.
+
 ---
 
 ## D-9 — 128-bit bearer tokens, digest-keyed lookup

@@ -365,6 +365,12 @@ const METRICS_PORT: u16 = 20241;
 /// Transitions are logged uniformly here, so instrumentation stays at the effect
 /// boundary and out of `step`.
 pub async fn supervise(token: String) {
+    // The image records which release the build resolved (Dockerfile stage 3);
+    // outside the container the file is simply absent.
+    if let Ok(version) = std::fs::read_to_string("/etc/cloudflared.version") {
+        tracing::info!(version = version.trim(), "cloudflared packaged at build");
+    }
+
     let mut state = Supervised::Stopped;
     let mut child: Option<tokio::process::Child> = None;
 
@@ -454,8 +460,8 @@ fn spawn(token: &str) -> Result<tokio::process::Child, PreflightFault> {
     let metrics = format!("127.0.0.1:{METRICS_PORT}");
     let mut cmd = tokio::process::Command::new("cloudflared");
     cmd.arg("tunnel")
-        // Auto-update would replace a pinned, checksum-verified binary at
-        // runtime from the network.
+        // Auto-update would replace the build-resolved binary at runtime from
+        // the network, outside the image and its provenance.
         .arg("--no-autoupdate")
         .arg("--metrics")
         .arg(&metrics)

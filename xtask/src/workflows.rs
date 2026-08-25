@@ -166,6 +166,9 @@ enum Trigger {
     ReleasePublished,
     WorkflowDispatch,
     WorkflowCall,
+    /// A cron rebuild. A schedule fires on the default branch with the
+    /// repository's own code, which no fork can influence.
+    Schedule(&'static str),
 }
 
 impl Trigger {
@@ -183,6 +186,9 @@ impl Trigger {
             Self::ReleasePublished => push_lines(out, &["  release:", "    types: [published]"]),
             Self::WorkflowDispatch => push_lines(out, &["  workflow_dispatch:"]),
             Self::WorkflowCall => push_lines(out, &["  workflow_call:"]),
+            Self::Schedule(cron) => {
+                let _ = writeln!(out, "  schedule:\n    - cron: '{cron}'");
+            }
         }
     }
 }
@@ -851,10 +857,14 @@ const DEPLOY: Workflow = Workflow {
         "with CI is a `needs:` edge rather than a completion event, so the publish",
         "jobs cannot run against code CI has not passed.",
     ],
+    // The weekly rebuild repackages the latest cloudflared into `edge`
+    // (Dockerfile stage 3 resolves it at build time), so the pre-release
+    // channel cannot age even when the source is quiet.
     triggers: &[
         Trigger::PushMain,
         Trigger::ReleasePublished,
         Trigger::WorkflowDispatch,
+        Trigger::Schedule("17 4 * * 1"),
     ],
     concurrency: Some(Concurrency {
         group: "deploy-${{ github.ref }}",
