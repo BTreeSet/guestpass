@@ -6,6 +6,7 @@
 
 mod gates;
 mod release;
+mod workflows;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,6 +41,8 @@ enum Cmd {
     },
     /// Everything CI runs, in CI's order, as one command.
     Verify,
+    /// Regenerate the committed workflow YAML from its typed source (G14).
+    Workflows,
 }
 
 fn main() -> std::process::ExitCode {
@@ -48,6 +51,7 @@ fn main() -> std::process::ExitCode {
         Cmd::Resolve => resolve(),
         Cmd::Manifest { digests } => manifest(&digests),
         Cmd::Verify => verify(),
+        Cmd::Workflows => workflows::write_all(&repo_root()).map_err(|e| e.to_string()),
     };
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,

@@ -27,10 +27,7 @@ pub fn check_all(root: &Path) -> std::io::Result<Vec<Finding>> {
     let mut findings = banned_identifiers(&root.join("src"))?;
     findings.extend(pure_core(root)?);
     findings.extend(network_listener(&root.join("src"))?);
-    findings.extend(publish_parity(
-        &root.join("addon/config.yaml"),
-        &root.join(".github/workflows/deploy.yaml"),
-    ));
+    findings.extend(publish_parity(&root.join("addon/config.yaml")));
     Ok(findings)
 }
 
@@ -93,42 +90,16 @@ struct Addon {
     arch: BTreeSet<String>,
 }
 
-/// The `deploy.yaml` spine down to the build matrix, typed. A rename of any
-/// key on this path fails the parse loudly instead of matching nothing.
-#[derive(serde::Deserialize)]
-struct Deploy {
-    jobs: DeployJobs,
-}
-#[derive(serde::Deserialize)]
-struct DeployJobs {
-    build: BuildJob,
-}
-#[derive(serde::Deserialize)]
-struct BuildJob {
-    strategy: Strategy,
-}
-#[derive(serde::Deserialize)]
-struct Strategy {
-    matrix: Matrix,
-}
-#[derive(serde::Deserialize)]
-struct Matrix {
-    include: Vec<Cell>,
-}
-#[derive(serde::Deserialize)]
-struct Cell {
-    arch: String,
-}
-
-/// G11. The Supervisor installs `<image>:<version>` for the machine it runs
-/// on, so an architecture the manifest offers and the matrix never builds is
-/// an install that fails at pull time, on a machine the maintainer does not
-/// own.
-pub fn publish_parity(addon: &Path, deploy: &Path) -> Vec<Finding> {
+/// G11. One architecture set, rooted in [`crate::workflows::ARCHITECTURES`].
+/// The deploy and CI matrices are *emitted* from that constant, so their
+/// parity needs no assertion; the one hand-written consumer left is the
+/// add-on manifest, and this gate reconciles it. An architecture the manifest
+/// offers and the constant lacks is an install that fails at pull time.
+pub fn publish_parity(addon: &Path) -> Vec<Finding> {
     let fail = |detail: String| {
         vec![Finding {
             gate: "G11",
-            place: format!("{} / {}", addon.display(), deploy.display()),
+            place: addon.display().to_string(),
             detail,
         }]
     };
@@ -140,28 +111,16 @@ pub fn publish_parity(addon: &Path, deploy: &Path) -> Vec<Finding> {
         Ok(m) => m,
         Err(e) => return fail(format!("addon manifest unreadable: {e}")),
     };
-    let workflow: Deploy = match std::fs::read_to_string(deploy)
-        .map_err(|e| e.to_string())
-        .and_then(|t| serde_yaml_ng::from_str(&t).map_err(|e| e.to_string()))
-    {
-        Ok(d) => d,
-        Err(e) => return fail(format!("deploy workflow unreadable: {e}")),
-    };
 
-    let built: BTreeSet<String> = workflow
-        .jobs
-        .build
-        .strategy
-        .matrix
-        .include
-        .into_iter()
-        .map(|c| c.arch)
+    let built: BTreeSet<String> = crate::workflows::ARCHITECTURES
+        .iter()
+        .map(|a| a.name.to_owned())
         .collect();
 
     let mut findings = Vec::new();
     if manifest.arch != built {
         findings.extend(fail(format!(
-            "manifest offers {:?}; the matrix builds {:?}",
+            "manifest offers {:?}; the workflows build and test {:?}",
             manifest.arch, built
         )));
     }
@@ -295,11 +254,7 @@ mod tests {
             "addon/config.yaml",
             "image: ghcr.io/x/y\narch:\n  - aarch64\n  - amd64\n  - armv7\n",
         );
-        let deploy = tree.write(
-            "deploy.yaml",
-            "jobs:\n  build:\n    strategy:\n      matrix:\n        include:\n          - arch: amd64\n          - arch: aarch64\n",
-        );
-        let findings = publish_parity(&addon, &deploy);
+        let findings = publish_parity(&addon);
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].detail.contains("armv7"), "{findings:?}");
     }
@@ -311,11 +266,7 @@ mod tests {
             "addon/config.yaml",
             "image: ghcr.io/x/y/{arch}\narch: [amd64, aarch64]\n",
         );
-        let deploy = tree.write(
-            "deploy.yaml",
-            "jobs:\n  build:\n    strategy:\n      matrix:\n        include:\n          - arch: amd64\n          - arch: aarch64\n",
-        );
-        let findings = publish_parity(&addon, &deploy);
+        let findings = publish_parity(&addon);
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].detail.contains("placeholder"));
     }

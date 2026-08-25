@@ -1,0 +1,12 @@
+---
+# The pin policy, stated for the auditor. It mirrors the compile-time rule in
+# xtask/src/workflows.rs: first-party namespaces ride their owner's trust and
+# pin to a major tag; everything else pins to a full commit SHA. The catch-all
+# is stricter than zizmor's default, which requires only some pin.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "actions/*": ref-pin
+        "docker/*": ref-pin
+        "*": hash-pin

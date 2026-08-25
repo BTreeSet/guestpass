@@ -345,3 +345,34 @@ commit:
   inputs (G13).
 * `edge` is a projection of the latest pre-release, never a name the algebra
   reasons about.
+
+---
+
+## D-14 — The pipeline is a compiled artifact
+
+**Premise.** The CI trust boundary is a set of invariants over YAML: which
+events trigger elevated jobs, which jobs hold capabilities, how actions are
+pinned, which architectures build where. Text invariants drift; review is the
+only gate on a hand-edited workflow.
+
+**Decision.** The workflows are typed values in `xtask/src/workflows.rs`,
+emitted deterministically by `cargo xtask workflows`. A drift test holds the
+committed YAML byte-equal to the emission (G14).
+
+**Consequences.**
+
+* The forbidden states are unrepresentable rather than asserted: no
+  `workflow_run` or `pull_request_target` trigger variant exists, ambient
+  workflow permissions are emitted empty unconditionally, a job cannot be
+  constructed without a permission set and a timeout, a mispinned action
+  fails const evaluation, and the runner and platform of a matrix travel
+  together in `ARCHITECTURES`, so an emulated build cannot be written.
+* Assertions whose subject is now generated were deleted, not kept: G11
+  stopped parsing two workflow files and compares the one hand-written
+  manifest against the constant.
+* The linters (`actionlint`, `zizmor`, `yamllint`) still run in CI, over the
+  artifact: they check the emitter's output against the world, which the type
+  system cannot see.
+* The cost is an emitter (~150 lines) that renders only what the three
+  workflows need. A new workflow feature means extending the model, which is
+  the point: the model is where review happens.

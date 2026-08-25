@@ -145,11 +145,23 @@ non-trivial merge. Create them alongside the crate.
   asserts every emitted card URL is drawn from the QR alphanumeric set, so a
   card never falls back to byte mode. It holds by construction: `Origin`
   admits no path, and tokens, device ids, and verbs are upper-safe.
-* **G11 — add-on publish parity.** `cargo xtask gates` asserts that the `arch:` list
-  in `addon/config.yaml` equals the architecture set of the `deploy.yaml` build
-  matrix, and that `image:` carries no `{arch}` placeholder. The Supervisor
-  installs `<image>:<version>`, so an architecture the manifest offers and the
-  matrix never builds is an install that fails at pull time.
+* **G11 — add-on publish parity.** The architecture set is one constant,
+  `workflows::ARCHITECTURES`, from which both build matrices are emitted, so
+  their parity holds by construction. `cargo xtask gates` reconciles the one
+  hand-written consumer, `addon/config.yaml`, against it, and asserts `image:`
+  carries no `{arch}` placeholder. The Supervisor installs `<image>:<version>`,
+  so an architecture the manifest offers and the constant lacks is an install
+  that fails at pull time.
+* **G14 — workflows are compiled artifacts.** The Actions YAML is emitted by
+  `cargo xtask workflows` from typed definitions in `xtask/src/workflows.rs`;
+  `workflows::tests::the_committed_workflows_match_their_source` holds the two
+  equal. The states the trust boundary forbids are unrepresentable in the
+  source: the trigger enum has no `workflow_run` or `pull_request_target`
+  variant, workflow-level permissions are emitted `{}` unconditionally, every
+  job type requires a permission set and a timeout, action pins are consts
+  whose namespace and hash proofs run at compile time, and the runner and
+  platform of a matrix travel together in one constant, so cross-compilation
+  cannot be written.
 * **G13 — release identity.** The typed algebra in `xtask/src/release.rs` is
   the only producer of published versions and tags (D-13); `cargo xtask
   resolve` is its shell. Its tests pin every branch on fixed inputs, and the
@@ -182,11 +194,12 @@ on: `ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for aarch64. Each pushes by
 digest under no tag, and `manifest` joins the digests into the one list that
 `addon/config.yaml` names.
 
-Actions under the `actions/` namespace are maintained by GitHub and run on
-GitHub's own trust anyway, so they pin to the latest major tag and pick up
-security and performance fixes without a hash bump. Every third-party `uses:`
-is pinned to a full commit SHA, because a tag there is a mutable reference
-into someone else's repository. Every job declares `timeout-minutes`. No
+The workflow YAML is generated (G14), and the generator's types carry the
+boundary: actions under the `actions/` and `docker/` namespaces ride their
+owner's trust and pin to the latest major tag, every other `uses:` pins to a
+full commit SHA because a tag there is a mutable reference into someone
+else's repository, and both rules are compile-time proofs on the pin consts.
+Every job declares `timeout-minutes` because the field is not optional. No
 `${{ }}` is interpolated into a `run:` block; values cross through `env:` and
 are referenced as quoted shell variables.
 
