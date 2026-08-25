@@ -183,8 +183,17 @@ fn serve(config: &Path, options: &Options) -> Result<(), String> {
 
         let supervisor = tokio::spawn(tunnel::supervise(token));
 
+        // The Supervisor and `docker stop` send SIGTERM; a terminal sends
+        // SIGINT. Either one drains in-flight requests instead of riding out
+        // the runtime's kill timeout.
         let server = axum::serve(listener, router(state)).with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            let mut term =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("SIGTERM handler installs");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            }
             tracing::info!("shutting down");
         });
 

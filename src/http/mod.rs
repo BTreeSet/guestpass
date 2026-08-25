@@ -133,6 +133,21 @@ pub fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// The embedded page, with its asset URLs rooted at the pass path.
+///
+/// Vite emits `./assets/...`, which a browser resolves against the directory
+/// of the current URL: at `/t/TOKEN` that directory is `/t/`, and at
+/// `/t/TOKEN/lamp/on` it is three segments deep, so a relative URL reaches the
+/// bundle at exactly one depth. Rewriting to `/t/<token>/assets/...` makes the
+/// page correct at every position of the call tree. `raw_token` is the segment
+/// exactly as the guest's browser sent it, already proven alphanumeric by
+/// `PassToken::parse`, so it embeds into HTML without escaping.
+fn page(raw_token: &str) -> Option<String> {
+    let index = Assets::get("index.html")?;
+    let html = String::from_utf8_lossy(&index.data);
+    Some(html.replace("\"./assets/", &format!("\"/t/{raw_token}/assets/")))
+}
+
 /// A bare 404 with no product name, no version, and no hint that a token-shaped
 /// path exists. Identical for an unknown token and a wrong path.
 async fn nothing_here() -> Response {
@@ -202,6 +217,7 @@ async fn handle(
     // and an invalid token learns nothing from any path. Parsing before hashing
     // bounds the hash input and folds case at the one constructor, so this
     // lookup and the config side cannot disagree about spelling.
+    let raw_token = token;
     let Ok(token) = PassToken::parse(token) else {
         return nothing_here().await;
     };
@@ -250,7 +266,7 @@ async fn handle(
         return fire(&state, &registry, pass, binding, call, headers).await;
     }
 
-    render(&state, &registry, pass, &position, headers)
+    render(&state, &registry, pass, &position, headers, raw_token)
 }
 
 async fn fire(
@@ -354,6 +370,7 @@ fn render(
     pass: &CompiledPass,
     position: &PartialCall<'_>,
     headers: &HeaderMap,
+    raw_token: &str,
 ) -> Response {
     if wants_json(headers) {
         return (
@@ -362,14 +379,14 @@ fn render(
         )
             .into_response();
     }
-    match Assets::get("index.html") {
-        Some(index) => (
+    match page(raw_token) {
+        Some(html) => (
             guard_headers(),
             [(
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("text/html; charset=utf-8"),
             )],
-            Body::from(index.data.into_owned()),
+            Body::from(html),
         )
             .into_response(),
         None => (
@@ -483,6 +500,18 @@ mod tests {
     use std::os::unix::fs::FileTypeExt as _;
 
     use super::*;
+
+    /// The page must load its bundle from any depth of the call tree, so every
+    /// asset URL is absolute under the pass path and no relative form remains.
+    #[test]
+    fn the_page_roots_its_assets_at_the_pass_path() {
+        let html = page("K7QF3M2X9WPLNA4RTVBC6DHJ8Z").expect("embedded page");
+        assert!(
+            html.contains("\"/t/K7QF3M2X9WPLNA4RTVBC6DHJ8Z/assets/"),
+            "{html}"
+        );
+        assert!(!html.contains("\"./assets/"), "{html}");
+    }
 
     /// The compile-time assertions above cover length and absoluteness; this
     /// records the value they are asserted against.

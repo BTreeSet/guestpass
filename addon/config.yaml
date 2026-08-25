@@ -10,6 +10,7 @@ startup: services
 # Docker's tini reaps orphaned children. It is a waitpid loop, not a service
 # manager: cloudflared is supervised in-process (AGENTS.md C-12).
 init: true
+# Read-only: guestpass never writes its config.
 # The narrowest grant that reaches the six endpoints. Not hassio_api: guestpass
 # has no business talking to the Supervisor.
 homeassistant_api: true
@@ -21,7 +22,7 @@ arch:
 # name, tagged with the `version` above.
 image: ghcr.io/btreeset/guestpass
 map:
-  - addon_config:rw
+  - addon_config
 # No ports, and no network listener at all: the guest surface is a UNIX socket
 # that only cloudflared, in this container, can reach.
 ports: {}
